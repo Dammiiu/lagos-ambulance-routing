@@ -1,0 +1,9 @@
+geopandas
+networkx
+folium
+matplotlib
+shapely
+pandas
+streamlit
+pytest
+osmnx

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: transparent; color: #e2e8f0; }
+    #status {
+      padding: 10px 14px; border-radius: 8px; font-size: 12px; line-height: 1.4;
+      background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(59, 130, 246, 0.25);
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .ok { color: #34d399; border-color: rgba(52, 211, 153, 0.3) !important; background: rgba(6, 95, 70, 0.2) !important; }
+    .err { color: #f87171; border-color: rgba(248, 113, 113, 0.3) !important; background: rgba(153, 27, 27, 0.2) !important; }
+    .wait { color: #60a5fa; }
+  </style>
+</head>
+<body>
+  <div id="status" class="wait">
+    <div>⏳ Initializing GPS tracking...</div>
+  </div>
+  <script>
+    function sendValue(value) {
+      window.parent.postMessage({
+        isStreamlitMessage: true,
+        type: "streamlit:setComponentValue",
+        value: value
+      }, "*");
+    }
+
+    function setHeight(height) {
+      window.parent.postMessage({
+        isStreamlitMessage: true,
+        type: "streamlit:setFrameHeight",
+        height: height
+      }, "*");
+    }
+
+    var watchId = null;
+
+    function startTracking() {
+      var status = document.getElementById("status");
+      if (!navigator.geolocation) {
+        status.className = "err";
+        status.innerHTML = "❌ Browser does not support geolocation.";
+        sendValue({error: "Unsupported"});
+        return;
+      }
+      
+      status.className = "wait";
+      status.innerHTML = "<div>📡 Requesting device GPS access...</div>";
+      
+      watchId = navigator.geolocation.watchPosition(
+        function(pos) {
+          var lat = pos.coords.latitude;
+          var lon = pos.coords.longitude;
+          var acc = pos.coords.accuracy;
+          status.className = "ok";
+          status.innerHTML = "<div>📡 <b>Device GPS Active</b></div>"
+            + "<div style='font-size: 11px; color: #a7f3d0;'>Coords: " + lat.toFixed(6) + "°N, " + lon.toFixed(6) + "°E</div>"
+            + "<div style='font-size: 10px; color: #94a3b8;'>Accuracy: ±" + acc.toFixed(1) + "m</div>";
+          
+          sendValue({
+            lat: lat,
+            lon: lon,
+            accuracy: acc,
+            error: null
+          });
+        },
+        function(err) {
+          status.className = "err";
+          if (err.code === 1) {
+            status.innerHTML = "<div>🔒 GPS Permission Denied</div>"
+              + "<div style='font-size: 11px; color: #fca5a5; margin-top: 2px;'>Please allow location access in your browser's address bar.</div>";
+          } else if (err.code === 2) {
+            status.innerHTML = "<div>⚠️ Position Unavailable</div>"
+              + "<div style='font-size: 11px; color: #fca5a5; margin-top: 2px;'>Ensure device GPS/location services are enabled.</div>";
+          } else {
+            status.innerHTML = "<div>⏱️ GPS Request Timeout</div>";
+          }
+          sendValue({
+            lat: null,
+            lon: null,
+            error: err.message,
+            code: err.code
+          });
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      );
+    }
+
+    // Report height to Streamlit
+    window.addEventListener("message", function(event) {
+      if (event.data.type === "streamlit:render") {
+        setHeight(65);
+      }
+    });
+
+    // Start tracking immediately
+    startTracking();
+  </script>
+</body>
+</html>
