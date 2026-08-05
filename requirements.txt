@@ -9,3 +9,5 @@ shapely==2.1.2
 streamlit==1.60.0
 streamlit-folium==0.27.3
 streamlit-geolocation==0.0.10
+streamlit-keyup==0.3.0
+streamlit-autorefresh==1.0.1
