@@ -508,6 +508,18 @@ def build_navigable_map(stations_gdf, incidents_gdf, sa_polys,
     folium.TileLayer("OpenStreetMap",       name="Street", show=False).add_to(m)
     folium.TileLayer("CartoDB positron",    name="Light",  show=False).add_to(m)
 
+    # Add Live Traffic Tile Layer if TOMTOM_API_KEY is configured
+    tomtom_api_key = st.secrets.get("TOMTOM_API_KEY")
+    if tomtom_api_key:
+        folium.TileLayer(
+            tiles=f"https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{{z}}/{{x}}/{{y}}.png?key={tomtom_api_key}",
+            attr="TomTom Traffic",
+            name="Live Traffic Flow",
+            overlay=True,
+            control=True,
+            opacity=0.8
+        ).add_to(m)
+
     plugins.Fullscreen(position="topright", title="Fullscreen", force_separate_button=True).add_to(m)
     plugins.MeasureControl(position="bottomright", primary_length_unit="meters").add_to(m)
 
@@ -668,7 +680,10 @@ def overlay_route(m, result_2leg, G, sim_progress=None, exact_dest_coord=None, e
     if not result_2leg:
         return m, [], []
 
-    leg1_ll = path_to_ll_via_geometry(G, result_2leg["leg1_path"], exact_dest_coord)
+    if "leg1_ll_direct" in result_2leg:
+        leg1_ll = result_2leg["leg1_ll_direct"]
+    else:
+        leg1_ll = path_to_ll_via_geometry(G, result_2leg["leg1_path"], exact_dest_coord)
 
     if len(leg1_ll) >= 2:
         # Leg 1 thick green halo
@@ -710,8 +725,12 @@ def overlay_route(m, result_2leg, G, sim_progress=None, exact_dest_coord=None, e
         ).add_to(m)
 
     leg2_ll = []
-    if result_2leg.get("has_leg2") and result_2leg.get("leg2_path"):
-        leg2_ll = path_to_ll_via_geometry(G, result_2leg["leg2_path"], exact_h_coord)
+    if result_2leg.get("has_leg2"):
+        if "leg2_ll_direct" in result_2leg:
+            leg2_ll = result_2leg["leg2_ll_direct"]
+        elif result_2leg.get("leg2_path"):
+            leg2_ll = path_to_ll_via_geometry(G, result_2leg["leg2_path"], exact_h_coord)
+            
         if len(leg2_ll) >= 2:
             # Leg 2 thin orange core (stands out clearly over the green halo)
             folium.PolyLine(
@@ -869,6 +888,16 @@ def build_3d_pydeck_chart(
             pickable=False
         ))
 
+    # Add Live Traffic Tile Layer if TOMTOM_API_KEY is configured
+    tomtom_api_key = st.secrets.get("TOMTOM_API_KEY")
+    if tomtom_api_key:
+        layers.insert(1 if is_navigating else 0, pdk.Layer(
+            "TileLayer",
+            data=[f"https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{{z}}/{{x}}/{{y}}.png?key={tomtom_api_key}"],
+            opacity=0.8,
+            pickable=False
+        ))
+
     # Always show service areas (if any) so the map doesn't look empty
     poly_data = []
     for t in sa_polys.keys():
@@ -982,8 +1011,17 @@ def build_3d_pydeck_chart(
         # Precompute leg1_ll and leg2_ll are stored in session state, but we fall back if not found
         hg = result.get("leg2_hospital_geom")
         exact_h_coord = (hg.x, hg.y) if hg else None
-        leg1_ll = st.session_state.get("leg1_ll") or path_to_ll_via_geometry(G, result["leg1_path"], exact_dest_coord)
-        leg2_ll = st.session_state.get("leg2_ll") or (path_to_ll_via_geometry(G, result["leg2_path"], exact_h_coord) if result.get("has_leg2") and result.get("leg2_path") else [])
+        if "leg1_ll_direct" in result:
+            leg1_ll = result["leg1_ll_direct"]
+        else:
+            leg1_ll = st.session_state.get("leg1_ll") or path_to_ll_via_geometry(G, result["leg1_path"], exact_dest_coord)
+            
+        leg2_ll = []
+        if result.get("has_leg2"):
+            if "leg2_ll_direct" in result:
+                leg2_ll = result["leg2_ll_direct"]
+            elif result.get("leg2_path"):
+                leg2_ll = st.session_state.get("leg2_ll") or path_to_ll_via_geometry(G, result["leg2_path"], exact_h_coord)
         
         all_ll = leg1_ll + leg2_ll
         if len(all_ll) >= 2:
@@ -1638,6 +1676,50 @@ def main():
                             used_wrong_way = True
                             break
                 result["used_wrong_way"] = used_wrong_way
+                
+                # --- LIVE TRAFFIC EXTERNAL ROUTING ---
+                tomtom_key = st.secrets.get("TOMTOM_API_KEY")
+                if tomtom_key and result:
+                    try:
+                        # Leg 1
+                        sg = result.get("leg1_station_geom")
+                        if current_veh_node is None and sg:
+                            start_ll = utm_to_ll(sg.x, sg.y)
+                        elif current_veh_node is not None:
+                            start_ll = utm_to_ll(*get_node_coords(nodes_gdf, current_veh_node))
+                        elif veh_node is not None and veh_mode not in ("At dispatch station",):
+                            start_ll = veh_origin_ll
+                        else:
+                            start_ll = utm_to_ll(sg.x, sg.y) if sg else None
+                            
+                        end_ll = utm_to_ll(inc_geom.x, inc_geom.y) if inc_geom else None
+                        
+                        if start_ll and end_ll:
+                            url1 = f"https://api.tomtom.com/routing/1/calculateRoute/{start_ll[0]},{start_ll[1]}:{end_ll[0]},{end_ll[1]}/json"
+                            res1 = requests.get(url1, params={"key": tomtom_key, "traffic": "true", "travelMode": "car"}, timeout=5).json()
+                            if "routes" in res1 and res1["routes"]:
+                                r1 = res1["routes"][0]
+                                result["leg1_ll_direct"] = [(pt["latitude"], pt["longitude"]) for pt in r1["legs"][0]["points"]]
+                                result["leg1_time_min"] = r1["summary"]["travelTimeInSeconds"] / 60.0
+
+                        # Leg 2
+                        if result.get("has_leg2") and result.get("leg2_hospital_geom"):
+                            start2_ll = end_ll
+                            hg = result.get("leg2_hospital_geom")
+                            end2_ll = utm_to_ll(hg.x, hg.y) if hg else None
+                            if start2_ll and end2_ll:
+                                url2 = f"https://api.tomtom.com/routing/1/calculateRoute/{start2_ll[0]},{start2_ll[1]}:{end2_ll[0]},{end2_ll[1]}/json"
+                                res2 = requests.get(url2, params={"key": tomtom_key, "traffic": "true", "travelMode": "car"}, timeout=5).json()
+                                if "routes" in res2 and res2["routes"]:
+                                    r2 = res2["routes"][0]
+                                    result["leg2_ll_direct"] = [(pt["latitude"], pt["longitude"]) for pt in r2["legs"][0]["points"]]
+                                    result["leg2_time_min"] = r2["summary"]["travelTimeInSeconds"] / 60.0
+                                    
+                        result["total_time_min"] = result.get("leg1_time_min", 0) + result.get("leg2_time_min", 0)
+                        result["live_traffic_active"] = True
+                    except Exception as e:
+                        print(f"TomTom routing failed, falling back to local NetworkX: {e}")
+                        result["live_traffic_active"] = False
 
                 st.session_state.update({
                     "result": result,
@@ -1740,6 +1822,7 @@ def main():
             _badge_type   = f'<span class="badge {badge_cls}">{inc_type_disp}</span>'
             _badge_custom = '<span class="badge badge-geo">Custom Vehicle</span>' if is_custom else ''
             _badge_siren  = '<span class="badge badge-rta" style="background:#dc2626;color:#fee2e2">⚠️ Wrong Way Used</span>' if result.get("used_wrong_way") else ''
+            _badge_traffic = '<span class="badge badge-live" style="background:#064e3b;color:#6ee7b7">🟢 Live Traffic Routing</span>' if result.get("live_traffic_active") else ''
             _leg_label    = "2-Leg" if result["has_leg2"] else "1-Leg"
             _badge_leg    = f'<span class="badge badge-medical" style="background:#1e3a5f;color:#90cdf4">{_leg_label} Response</span>'
             _kpi2 = (
@@ -1750,7 +1833,7 @@ def main():
 
             _result_html = (
                 f'<div class="result-panel">'
-                f'<div style="margin-bottom:0.5rem">{_badge_type}{_badge_custom}{_badge_siren}{_badge_leg}</div>'
+                f'<div style="margin-bottom:0.5rem">{_badge_type}{_badge_custom}{_badge_siren}{_badge_traffic}{_badge_leg}</div>'
                 f'<h4 style="margin:0 0 0.4rem;font-size:.75rem;color:#90cdf4">RESPONSE TIMES (TCF=2.2 Adjusted)</h4>'
                 f'<div class="kpi-row">'
                 f'<div class="kpi-card {kpi_cls}">'

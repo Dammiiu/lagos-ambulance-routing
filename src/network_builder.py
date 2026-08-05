@@ -233,15 +233,18 @@ def path_to_detailed_coords(G: nx.DiGraph, path: list, exact_dest_coord: tuple =
 
     if exact_dest_coord and len(all_coords) >= 2:
         try:
-            line = LineString(all_coords)
+            # We should only project the point onto the final segment of the route to avoid false matches
+            # The final segment is roughly the last edge added. We can just take the last 10 points.
+            last_segment_coords = all_coords[-10:] if len(all_coords) > 10 else all_coords
+            line = LineString(last_segment_coords)
             pt = Point(exact_dest_coord)
             proj_dist = line.project(pt)
             
-            truncated_coords = []
+            truncated_last = []
             accumulated = 0.0
-            for i in range(1, len(all_coords)):
-                p1 = all_coords[i-1]
-                p2 = all_coords[i]
+            for i in range(1, len(last_segment_coords)):
+                p1 = last_segment_coords[i-1]
+                p2 = last_segment_coords[i]
                 d = math.sqrt((p2[0]-p1[0])**2 + (p2[1]-p1[1])**2)
                 
                 if accumulated + d >= proj_dist:
@@ -249,15 +252,19 @@ def path_to_detailed_coords(G: nx.DiGraph, path: list, exact_dest_coord: tuple =
                     ratio = rem / d if d > 0 else 0
                     nx_coord = p1[0] + ratio * (p2[0] - p1[0])
                     ny_coord = p1[1] + ratio * (p2[1] - p1[1])
-                    truncated_coords.append(p1)
-                    truncated_coords.append((nx_coord, ny_coord))
+                    truncated_last.append(p1)
+                    truncated_last.append((nx_coord, ny_coord))
                     break
-                truncated_coords.append(p1)
+                truncated_last.append(p1)
                 accumulated += d
             
-            # Explicitly append the exact target coordinate to close the gap between the road and the marker
-            truncated_coords.append(exact_dest_coord)
-            all_coords = truncated_coords
+            truncated_last.append(exact_dest_coord)
+            
+            # Combine the unmodified beginning with the truncated end
+            if len(all_coords) > 10:
+                all_coords = all_coords[:-10] + truncated_last
+            else:
+                all_coords = truncated_last
         except Exception:
             pass
 
