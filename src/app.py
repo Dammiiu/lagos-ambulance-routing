@@ -893,9 +893,11 @@ def build_3d_pydeck_chart(
     if tomtom_api_key:
         layers.insert(1 if is_navigating else 0, pdk.Layer(
             "TileLayer",
-            data=[f"https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{{z}}/{{x}}/{{y}}.png?key={tomtom_api_key}"],
-            opacity=0.8,
-            pickable=False
+            data=f"https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{{z}}/{{x}}/{{y}}.png?key={tomtom_api_key}",
+            opacity=1.0,
+            pickable=False,
+            tile_size=256,
+            max_requests=-1
         ))
 
     # Always show service areas (if any) so the map doesn't look empty
@@ -924,7 +926,6 @@ def build_3d_pydeck_chart(
             ))
 
     station_data = []
-    station_sign_data = []
     for _, srow in stations_gdf.iterrows():
         lat, lon = utm_to_ll(srow.geometry.x, srow.geometry.y)
         ftype = srow.get("facility_type", "medical")
@@ -932,55 +933,16 @@ def build_3d_pydeck_chart(
         symbol = "🏥" if ftype == "medical" else "🚒"
         station_data.append({"name": srow["name"], "type": f"{ftype.title()} Station",
                               "position": [lon, lat, 10], "color": color, "radius": 200})
-        # Add symbol and facility name directly on map
-        station_sign_data.append({
-            "position": [lon, lat, 35],
-            "text": f"{symbol} {srow['name']}",
-            "color": [255, 255, 255, 255]
-        })
-        
-    # Inject Static Landmarks
-    landmarks = [
-        {"name": "🏙️ Ikeja CBD", "pos": [3.339, 6.601]},
-        {"name": "🛫 Murtala Muhammed Airport", "pos": [3.321, 6.577]},
-        {"name": "🌉 Third Mainland Bridge", "pos": [3.400, 6.500]},
-        {"name": "🏢 Victoria Island", "pos": [3.421, 6.428]},
-        {"name": "🏟️ Surulere", "pos": [3.350, 6.500]},
-        {"name": "🛍️ Oshodi", "pos": [3.337, 6.556]}
-    ]
-    for lm in landmarks:
-        station_sign_data.append({
-            "position": [lm["pos"][0], lm["pos"][1], 50],
-            "text": lm["name"],
-            "color": [255, 255, 255, 255]
-        })
 
     layers.append(pdk.Layer(
         "ScatterplotLayer", data=pd.DataFrame(station_data),
         get_position="position", get_fill_color="color", get_radius="radius",
         radius_min_pixels=10, pickable=True,
     ))
-    if station_sign_data:
-        layers.append(pdk.Layer(
-            "TextLayer",
-            data=pd.DataFrame(station_sign_data),
-            get_position="position",
-            get_text="text",
-            get_size=16,
-            get_color="color",
-            get_alignment_baseline="'center'",
-            get_text_anchor="'middle'",
-            background=True,
-            get_background_color=[15, 23, 42, 210],  # Slate 900 semi-transparent
-            font_family="'Inter', sans-serif",
-            font_weight="bold",
-            pickable=True,
-        ))
 
     cmap = {"Medical": [59,130,246,230], "RTA": [245,158,11,230], "Fire": [239,68,68,230]}
     inc_symbols = {"Medical": "🩺", "RTA": "💥", "Fire": "🔥"}
     inc_data = []
-    inc_sign_data = []
     for i, inc in incidents_gdf.iterrows():
         lat, lon = utm_to_ll(inc.geometry.x, inc.geometry.y)
         itype = inc["type"]
@@ -988,32 +950,12 @@ def build_3d_pydeck_chart(
         inc_data.append({"name": f"Incident #{i}", "type": f"{itype} Incident",
                           "position": [lon, lat, 10],
                           "color": cmap.get(itype, [156,163,175,230]), "radius": 75})
-        inc_sign_data.append({
-            "position": [lon, lat, 22],
-            "text": symbol,
-            "color": [255, 255, 255, 255]
-        })
+                          
     layers.append(pdk.Layer(
         "ScatterplotLayer", data=pd.DataFrame(inc_data),
         get_position="position", get_fill_color="color", get_radius="radius",
         radius_min_pixels=5, pickable=True,
     ))
-    if inc_sign_data:
-        layers.append(pdk.Layer(
-            "TextLayer",
-            data=pd.DataFrame(inc_sign_data),
-            get_position="position",
-            get_text="text",
-            get_size=18,
-            get_color="color",
-            get_alignment_baseline="'center'",
-            get_text_anchor="'middle'",
-            background=True,
-            get_background_color=[185, 28, 28, 210], # Red-700 semi-transparent for incidents
-            font_family="'Inter', sans-serif",
-            font_weight="bold",
-            pickable=True,
-        ))
 
     if result:
         # Precompute leg1_ll and leg2_ll are stored in session state, but we fall back if not found
@@ -1164,7 +1106,10 @@ def build_3d_pydeck_chart(
     st.pydeck_chart(deck, use_container_width=True, height=800, key="pydeck_navigation_chart")
 
     # Overlay 3D map legend using absolute negative-margin container positioning
-    st.markdown("""
+    tomtom_key_present = bool(st.secrets.get("TOMTOM_API_KEY"))
+    live_traffic_html = '<br><span style="color: #34d399;">&#9679;</span>&ensp;TomTom Live Traffic Active' if tomtom_key_present else ''
+    
+    st.markdown(f"""
     <div class="pydeck-legend-container" style="position: relative; margin-top: -800px; height: 800px; pointer-events: none; z-index: 1000;">
         <div style="position: absolute; top: 20px; right: 20px; 
                     background: rgba(6,18,38,0.92); color: #e2e8f0; 
@@ -1184,7 +1129,7 @@ def build_3d_pydeck_chart(
           <span style="color: #4285f4;">&#9472;&#9472;</span>&ensp;Leg 1: Dispatch → Scene<br>
           <span style="color: #fb923c;">&#9472;&#9472;</span>&ensp;Leg 2: Scene → Hospital<br>
           <span style="color: rgba(29,78,216,0.35);">&#9632;</span>&ensp;Medical coverage<br>
-          <span style="color: rgba(185,28,28,0.35);">&#9632;</span>&ensp;Fire coverage
+          <span style="color: rgba(185,28,28,0.35);">&#9632;</span>&ensp;Fire coverage{live_traffic_html}
         </div>
     </div>
     <div style="height: 0px; margin-top: 0px;"></div>
