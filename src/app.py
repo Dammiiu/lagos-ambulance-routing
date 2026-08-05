@@ -354,10 +354,20 @@ input::placeholder, textarea::placeholder { color: #ffffff !important; opacity: 
     box-shadow:0 4px 12px rgba(37,99,235,0.4);transition:all 0.2s;
 }
 
-/* Responsive */
+/* Responsive Enhancements */
 @media (max-width: 1024px) {
     .stApp .row-widget { flex-direction: column !important; }
-    div[data-testid="column"] { width: 100% !important; max-width: 100% !important; }
+    div[data-testid="column"] { width: 100% !important; max-width: 100% !important; flex: 1 1 100% !important; }
+}
+
+@media (max-width: 768px) {
+    .stApp header { background-color: transparent !important; }
+    div[data-testid="stSidebar"] { min-width: 100% !important; max-width: 100% !important; }
+    .kpi-row { flex-direction: column !important; }
+    .kpi-card { width: 100% !important; margin-bottom: 0.5rem; }
+    .sim-stat { padding: 8px !important; margin: 4px 0 !important; }
+    div[data-testid="stDeckGlJsonChart"] { height: 75vh !important; } /* Allow scrolling below map on mobile */
+    .pydeck-legend-container { display: none !important; } /* Hide 3D legend overlay on small screens to save space */
 }
 </style>
 """, unsafe_allow_html=True)
@@ -821,45 +831,39 @@ def overlay_route(m, result_2leg, G, sim_progress=None, exact_dest_coord=None, e
     return m, leg1_ll, leg2_ll
 
 
-def compute_remaining_time_and_dist(result, prog, G):
-    """Accurately calculates remaining distance and time by summing edges from the current progress point."""
-    leg1_path = result.get("leg1_path", [])
-    leg2_path = result.get("leg2_path", [])
-    has_leg2 = result.get("has_leg2", False)
-    
-    edges = []
-    if leg1_path:
-        for i in range(len(leg1_path)-1):
-            u, v = leg1_path[i], leg1_path[i+1]
-            ed = G.get_edge_data(u, v)
-            if ed:
-                d = ed[0] if 0 in ed else ed
-                edges.append((d.get("length_m",0), d.get("time_min",0)))
-            
-    if has_leg2 and leg2_path:
-        for i in range(len(leg2_path)-1):
-            u, v = leg2_path[i], leg2_path[i+1]
-            ed = G.get_edge_data(u, v)
-            if ed:
-                d = ed[0] if 0 in ed else ed
-                edges.append((d.get("length_m",0), d.get("time_min",0)))
-                
-    total_dist = sum(e[0] for e in edges)
+def compute_remaining_time_and_dist(result, prog, G, live_speed_kmh=None, all_ll=None):
+    """Accurately calculates remaining distance and time based on actual paths and dynamic speed."""
+    if all_ll is None:
+        all_ll = st.session_state.get("leg1_ll", []) + st.session_state.get("leg2_ll", [])
+        
+    if not all_ll:
+        return 0.0, 0.0
+        
+    total_dist = 0.0
+    segments = []
+    # Calculate great-circle distances between all coordinate pairs
+    for i in range(len(all_ll) - 1):
+        lat1, lon1 = all_ll[i]
+        lat2, lon2 = all_ll[i+1]
+        x1, y1 = ll_to_utm(lat1, lon1)
+        x2, y2 = ll_to_utm(lat2, lon2)
+        d = math.sqrt((x2-x1)**2 + (y2-y1)**2)
+        segments.append(d)
+        total_dist += d
+        
     target_dist = total_dist * prog
+    rem_dist = max(0.0, total_dist - target_dist)
     
-    rem_dist, rem_time, accum = 0.0, 0.0, 0.0
-    for length_m, time_m in edges:
-        if accum + length_m <= target_dist:
-            accum += length_m
-        elif accum < target_dist:
-            fraction_left = 1.0 - ((target_dist - accum) / max(length_m, 1e-6))
-            rem_dist += length_m * fraction_left
-            rem_time += time_m * fraction_left
-            accum += length_m
-        else:
-            rem_dist += length_m
-            rem_time += time_m
-            
+    if live_speed_kmh is not None and live_speed_kmh > 0:
+        # speed is km/h, dist is meters. Time = (dist/1000) / speed * 60
+        # Clamp speed so it doesn't predict crazy ETAs if stopped
+        eff_speed = max(live_speed_kmh, 5.0) 
+        rem_time = (rem_dist / 1000.0) / eff_speed * 60.0 # in minutes
+    else:
+        # Fallback to static total time proportional to distance remaining
+        tot_time = result.get("total_time_min", 0.0)
+        rem_time = tot_time * (1.0 - prog)
+        
     return rem_dist, rem_time
 
 
@@ -893,7 +897,7 @@ def build_3d_pydeck_chart(
     if tomtom_api_key:
         layers.insert(1 if is_navigating else 0, pdk.Layer(
             "TileLayer",
-            data=f"https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{{z}}/{{x}}/{{y}}.png?key={tomtom_api_key}",
+            data=[f"https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{{z}}/{{x}}/{{y}}.png?key={tomtom_api_key}"],
             opacity=1.0,
             pickable=False,
             tile_size=256,
@@ -926,6 +930,7 @@ def build_3d_pydeck_chart(
             ))
 
     station_data = []
+    station_sign_data = []
     for _, srow in stations_gdf.iterrows():
         lat, lon = utm_to_ll(srow.geometry.x, srow.geometry.y)
         ftype = srow.get("facility_type", "medical")
@@ -933,16 +938,40 @@ def build_3d_pydeck_chart(
         symbol = "🏥" if ftype == "medical" else "🚒"
         station_data.append({"name": srow["name"], "type": f"{ftype.title()} Station",
                               "position": [lon, lat, 10], "color": color, "radius": 200})
+        station_sign_data.append({
+            "position": [lon, lat, 35],
+            "text": f"{symbol} {srow['name']}",
+            "color": [255, 255, 255, 255]
+        })
 
     layers.append(pdk.Layer(
         "ScatterplotLayer", data=pd.DataFrame(station_data),
         get_position="position", get_fill_color="color", get_radius="radius",
         radius_min_pixels=10, pickable=True,
     ))
+    if station_sign_data:
+        layers.append(pdk.Layer(
+            "TextLayer",
+            data=pd.DataFrame(station_sign_data),
+            get_position="position",
+            get_text="text",
+            get_size=14,
+            size_min_pixels=12,
+            size_max_pixels=16,
+            get_color="color",
+            get_alignment_baseline="'center'",
+            get_text_anchor="'middle'",
+            background=True,
+            get_background_color=[15, 23, 42, 210],
+            font_family="'Inter', sans-serif",
+            font_weight="bold",
+            pickable=True,
+        ))
 
     cmap = {"Medical": [59,130,246,230], "RTA": [245,158,11,230], "Fire": [239,68,68,230]}
     inc_symbols = {"Medical": "🩺", "RTA": "💥", "Fire": "🔥"}
     inc_data = []
+    inc_sign_data = []
     for i, inc in incidents_gdf.iterrows():
         lat, lon = utm_to_ll(inc.geometry.x, inc.geometry.y)
         itype = inc["type"]
@@ -950,12 +979,35 @@ def build_3d_pydeck_chart(
         inc_data.append({"name": f"Incident #{i}", "type": f"{itype} Incident",
                           "position": [lon, lat, 10],
                           "color": cmap.get(itype, [156,163,175,230]), "radius": 75})
+        inc_sign_data.append({
+            "position": [lon, lat, 22],
+            "text": symbol,
+            "color": [255, 255, 255, 255]
+        })
                           
     layers.append(pdk.Layer(
         "ScatterplotLayer", data=pd.DataFrame(inc_data),
         get_position="position", get_fill_color="color", get_radius="radius",
         radius_min_pixels=5, pickable=True,
     ))
+    if inc_sign_data:
+        layers.append(pdk.Layer(
+            "TextLayer",
+            data=pd.DataFrame(inc_sign_data),
+            get_position="position",
+            get_text="text",
+            get_size=14,
+            size_min_pixels=12,
+            size_max_pixels=16,
+            get_color="color",
+            get_alignment_baseline="'center'",
+            get_text_anchor="'middle'",
+            background=True,
+            get_background_color=[185, 28, 28, 210],
+            font_family="'Inter', sans-serif",
+            font_weight="bold",
+            pickable=True,
+        ))
 
     if result:
         # Precompute leg1_ll and leg2_ll are stored in session state, but we fall back if not found
@@ -1904,34 +1956,102 @@ def main():
                             st.session_state["sim_progress"] = live_prog
 
                             OFF_ROUTE_THRESH = 150  # metres
+                            
+                            import time
+                            cur_time = time.time()
+                            if "last_reroute_time" not in st.session_state:
+                                st.session_state["last_reroute_time"] = cur_time
+                                
+                            needs_reroute = False
                             if near_d > OFF_ROUTE_THRESH:
+                                needs_reroute = True
                                 st.session_state["live_off_route"] = True
+                            elif cur_time - st.session_state["last_reroute_time"] > 60:
+                                needs_reroute = True
+                                st.session_state["last_reroute_time"] = cur_time
+                                
+                            if needs_reroute:
                                 # Re-route from current position to original incident
                                 orig_inc = st.session_state.get("orig_inc_node")
                                 if orig_inc:
-                                    lx, ly = ll_to_utm(live_lat, live_lon)
-                                    cur_node, _ = snap_point_to_node(nodes_gdf, Point(lx, ly))
-                                    repath, retime = shortest_path(G, cur_node, orig_inc)
-                                    if retime < float("inf"):
-                                        new_result = dict(result)
-                                        new_result["leg1_path"]      = repath
-                                        new_result["leg1_time_min"]  = retime
-                                        new_result["total_time_min"] = (retime +
-                                            new_result.get("leg2_time_min", 0))
-                                        new_result["leg1_station_name"] = "Live Re-route"
-                                        new_result["vehicle_origin_ll"] = (live_lat, live_lon)
-                                        st.session_state["result"] = new_result
-                                        st.session_state["leg1_ll"] = path_to_ll_via_geometry(G, repath)
-                                        result = new_result
-                                        st.session_state["live_off_route"] = False
+                                    tomtom_key = st.secrets.get("TOMTOM_API_KEY")
+                                    tomtom_success = False
+                                    if tomtom_key:
+                                        try:
+                                            # We need original incident Lat/Lon.
+                                            inc_geom_tmp = st.session_state.get("inc_geom")
+                                            if inc_geom_tmp:
+                                                end_ll = utm_to_ll(inc_geom_tmp.x, inc_geom_tmp.y)
+                                                url = f"https://api.tomtom.com/routing/1/calculateRoute/{live_lat},{live_lon}:{end_ll[0]},{end_ll[1]}/json"
+                                                res = requests.get(url, params={"key": tomtom_key, "traffic": "true", "travelMode": "car"}, timeout=5).json()
+                                                if "routes" in res and res["routes"]:
+                                                    r = res["routes"][0]
+                                                    new_result = dict(result)
+                                                    pts = [(pt["latitude"], pt["longitude"]) for pt in r["legs"][0]["points"]]
+                                                    new_result["leg1_ll_direct"] = pts
+                                                    new_result["leg1_time_min"] = r["summary"]["travelTimeInSeconds"] / 60.0
+                                                    new_result["total_time_min"] = new_result["leg1_time_min"] + new_result.get("leg2_time_min", 0)
+                                                    new_result["leg1_station_name"] = "Live Traffic Re-route"
+                                                    new_result["vehicle_origin_ll"] = (live_lat, live_lon)
+                                                    new_result["live_traffic_active"] = True
+                                                    
+                                                    st.session_state["result"] = new_result
+                                                    st.session_state["leg1_ll"] = pts
+                                                    result = new_result
+                                                    st.session_state["live_off_route"] = False
+                                                    tomtom_success = True
+                                        except Exception:
+                                            pass
+                                            
+                                    if not tomtom_success:
+                                        lx, ly = ll_to_utm(live_lat, live_lon)
+                                        cur_node, _ = snap_point_to_node(nodes_gdf, Point(lx, ly))
+                                        repath, retime = shortest_path(G, cur_node, orig_inc)
+                                        if retime < float("inf"):
+                                            new_result = dict(result)
+                                            new_result["leg1_path"]      = repath
+                                            new_result["leg1_time_min"]  = retime
+                                            new_result["total_time_min"] = (retime +
+                                                new_result.get("leg2_time_min", 0))
+                                            new_result["leg1_station_name"] = "Live Re-route"
+                                            new_result["vehicle_origin_ll"] = (live_lat, live_lon)
+                                            st.session_state["result"] = new_result
+                                            st.session_state["leg1_ll"] = path_to_ll_via_geometry(G, repath)
+                                            result = new_result
+                                            st.session_state["live_off_route"] = False
                             else:
                                 st.session_state["live_off_route"] = False
 
                     if st.session_state.get("live_off_route"):
                         st.warning("⚠️ Off route — recalculating…")
-
+                        
+                    # Calculate real vehicle speed dynamically
+                    import time
+                    cur_time = time.time()
+                    live_speed = None
+                    if live_lat and live_lon:
+                        if "last_gps_time" in st.session_state:
+                            dt = cur_time - st.session_state["last_gps_time"]
+                            if dt > 1.0: # At least 1 second passed
+                                p_lat = st.session_state["last_gps_lat"]
+                                p_lon = st.session_state["last_gps_lon"]
+                                px, py = ll_to_utm(p_lat, p_lon)
+                                cx, cy = ll_to_utm(live_lat, live_lon)
+                                dist_m = math.sqrt((cx-px)**2 + (cy-py)**2)
+                                live_speed = (dist_m / dt) * 3.6 # m/s to km/h
+                        
+                        st.session_state["last_gps_lat"] = live_lat
+                        st.session_state["last_gps_lon"] = live_lon
+                        st.session_state["last_gps_time"] = cur_time
+                        
+                    if live_speed is not None:
+                        prev_speed = st.session_state.get("live_speed_kmh", 40.0)
+                        if live_speed < 160: # Ignore absurd GPS jumps
+                            st.session_state["live_speed_kmh"] = prev_speed * 0.7 + live_speed * 0.3
+                            
                     prog = st.session_state["sim_progress"]
-                    rem_dist, rem_time = compute_remaining_time_and_dist(result, prog, G)
+                    eff_speed_kmh = st.session_state.get("live_speed_kmh", 40.0)
+                    rem_dist, rem_time = compute_remaining_time_and_dist(result, prog, G, live_speed_kmh=eff_speed_kmh, all_ll=all_route_ll)
 
                     livecols = st.columns(3)
                     with livecols[0]:
