@@ -249,17 +249,15 @@ def path_to_detailed_coords(G: nx.DiGraph, path: list, exact_dest_coord: tuple =
                     ratio = rem / d if d > 0 else 0
                     nx_coord = p1[0] + ratio * (p2[0] - p1[0])
                     ny_coord = p1[1] + ratio * (p2[1] - p1[1])
-                    if not truncated_coords or truncated_coords[-1] != p1:
-                        truncated_coords.append(p1)
+                    truncated_coords.append(p1)
                     truncated_coords.append((nx_coord, ny_coord))
                     break
-                else:
-                    if not truncated_coords or truncated_coords[-1] != p1:
-                        truncated_coords.append(p1)
-                    truncated_coords.append(p2)
-                    accumulated += d
-            if truncated_coords:
-                all_coords = truncated_coords
+                truncated_coords.append(p1)
+                accumulated += d
+            
+            # Explicitly append the exact target coordinate to close the gap between the road and the marker
+            truncated_coords.append(exact_dest_coord)
+            all_coords = truncated_coords
         except Exception:
             pass
 

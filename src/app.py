@@ -83,8 +83,7 @@ def create_vehicle_arrow(lat, lon, bearing, size_deg=0.00035):
     br_ang = ang - 2.45
     br_lat = lat + (size_deg * 0.75) * math.sin(br_ang)
     br_lon = lon + (size_deg * 0.75) * math.cos(br_ang)
-    return [[f_lon, f_lat, 20.0], [bl_lon, bl_lat, 20.0], [c_lon, c_lat, 20.0], [br_lon, br_lat, 20.0], [f_lon, f_lat, 20.0]]
-
+    return [[f_lon, f_lat], [bl_lon, bl_lat], [c_lon, c_lat], [br_lon, br_lat], [f_lon, f_lat]]
 
 # ── Load project modules (bypasses stale pycache) ─────────────────────────────
 import importlib.util as _ilu
@@ -144,16 +143,29 @@ st.markdown("""
 
 /* ── Banner ── */
 .top-banner {
-    background:linear-gradient(135deg,#061326 0%,#0d2547 45%,#0a3d7a 100%);
-    border:1px solid rgba(66,153,225,0.3); border-radius:14px;
-    padding:1.2rem 2rem 1rem; margin-bottom:1rem;
-    display:flex; align-items:center; gap:1.4rem;
-    box-shadow:0 8px 32px rgba(0,0,0,0.5);
+    background: linear-gradient(135deg, #070f1e 0%, #0d1e36 50%, #153258 100%);
+    border: 1.5px solid rgba(59, 130, 246, 0.4);
+    border-radius: 14px;
+    padding: 1.2rem 2rem;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 1.4rem;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.6);
 }
-.top-banner .logo { font-size:2.3rem; }
-.top-banner h1 { color:#fff;font-size:1.3rem;font-weight:800;margin:0;letter-spacing:-0.02em; }
-.top-banner p  { color:rgba(255,255,255,0.58);font-size:0.74rem;margin:0.18rem 0 0; }
-.top-banner .uni { margin-left:auto;text-align:right;color:rgba(255,255,255,0.38);font-size:0.66rem;line-height:1.55;white-space:nowrap; }
+.top-banner .logo { font-size: 2.5rem; filter: drop-shadow(0 2px 8px rgba(59,130,246,0.4)); }
+.top-banner h1 { color: #fff; font-size: 1.4rem; font-weight: 800; margin: 0; letter-spacing: -0.02em; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+.top-banner p  { color: #94a3b8; font-size: 0.78rem; margin: 0.2rem 0 0; }
+.top-banner .uni {
+    margin-left: auto;
+    text-align: right;
+    color: #e2e8f0;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    white-space: nowrap;
+    border-left: 3px solid #3b82f6;
+    padding-left: 1.2rem;
+}
 
 /* ── KPI cards ── */
 .kpi-row { display:flex; gap:0.55rem; margin-bottom:0.7rem; }
@@ -235,6 +247,11 @@ st.markdown("""
 [data-testid="stStatusWidget"] { visibility: hidden !important; height: 0 !important; position: absolute !important; }
 [data-testid="stAppViewContainer"] [data-stale="true"] { opacity: 1 !important; transition: none !important; }
 .st-emotion-cache-1kyxreq, .st-emotion-cache-1gzhbcq, .st-emotion-cache-1629p8f { opacity: 1 !important; transition: none !important; }
+
+/* ── Make placeholders extremely visible ── */
+::placeholder { color: #ffffff !important; opacity: 0.9 !important; font-weight: 600 !important; }
+input::placeholder, textarea::placeholder { color: #ffffff !important; opacity: 0.9 !important; font-weight: 600 !important; }
+
 
 /* ── Sidebar base ── */
 [data-testid="stSidebar"] {
@@ -380,9 +397,38 @@ def _nearest_route_point(current_ll, route_ll):
     return best_i, best_d
 
 
+# ── Priority 3: Startup Data Validation ────────────────────────────────────────
+@st.cache_data(show_spinner=False)
+def validate_startup_data():
+    """Validates existence and schema of required GeoPackages before building graph."""
+    required = {
+        "data/ambulance_stations.gpkg": ["facility_type", "name", "geometry"],
+        "data/incident_points.gpkg": ["type", "geometry"],
+        "data/road_network_final.gpkg": ["speed_kmh", "length_m", "time_min", "highway", "geometry"]
+    }
+    for file_path, required_cols in required.items():
+        if not os.path.exists(file_path):
+            return f"Missing required file: {file_path}"
+        try:
+            # Read just 1 row to validate schema and non-emptiness quickly
+            gdf = gpd.read_file(file_path, rows=1)
+            if len(gdf) == 0:
+                return f"File is empty (0 rows): {file_path}"
+            missing = [c for c in required_cols if c not in gdf.columns]
+            if missing:
+                return f"File {file_path} missing required columns: {', '.join(missing)}"
+        except Exception as e:
+            return f"Corrupt or invalid GeoPackage {file_path}: {e}"
+    return None
+# ─────────────────────────────────────────────────────────────────────────────
+
 # ── Double-Cache data loader ───────────────────────────────────────────────────
 @st.cache_resource(show_spinner="Loading and preparing routing network...")
 def load_data():
+    validation_error = validate_startup_data()
+    if validation_error:
+        raise ValueError(f"Data Validation Failed: {validation_error}")
+        
     cache_file = "data/app_prepared_data.pkl"
     if os.path.exists(cache_file):
         try:
@@ -650,6 +696,12 @@ def overlay_route(m, result_2leg, G, sim_progress=None, exact_dest_coord=None, e
 
     if leg1_ll:
         inc_ll = leg1_ll[-1]
+        
+        # ── PART A3 FIX: Visual Overlap Offset ──
+        # If the incident snapped to the exact same node as the dispatch station, slightly offset it visually
+        if abs(inc_ll[0] - s_ll[0]) < 1e-6 and abs(inc_ll[1] - s_ll[1]) < 1e-6:
+            inc_ll = (inc_ll[0], inc_ll[1] + 0.00015)
+            
         folium.Marker(
             inc_ll,
             icon=folium.Icon(color="orange", icon="exclamation-sign", prefix="glyphicon"),
@@ -668,6 +720,15 @@ def overlay_route(m, result_2leg, G, sim_progress=None, exact_dest_coord=None, e
             ).add_to(m)
         hg = result_2leg["leg2_hospital_geom"]
         h_ll = utm_to_ll(hg.x, hg.y)
+        
+        # ── PART A3 FIX: Visual Overlap Offset ──
+        # Offset hospital marker if it overlaps the incident or station
+        if leg1_ll:
+            if abs(h_ll[0] - inc_ll[0]) < 1e-6 and abs(h_ll[1] - inc_ll[1]) < 1e-6:
+                h_ll = (h_ll[0] - 0.00015, h_ll[1])
+        if abs(h_ll[0] - s_ll[0]) < 1e-6 and abs(h_ll[1] - s_ll[1]) < 1e-6:
+            h_ll = (h_ll[0] - 0.00015, h_ll[1] + 0.00015)
+
         folium.Marker(
             h_ll,
             icon=folium.Icon(color="red", icon="plus-sign", prefix="glyphicon"),
@@ -841,16 +902,34 @@ def build_3d_pydeck_chart(
         color = [37, 99, 235, 240] if ftype == "medical" else [220, 38, 38, 240]
         symbol = "🏥" if ftype == "medical" else "🚒"
         station_data.append({"name": srow["name"], "type": f"{ftype.title()} Station",
-                              "position": [lon, lat, 10], "color": color, "radius": 95})
+                              "position": [lon, lat, 10], "color": color, "radius": 200})
+        # Add symbol and facility name directly on map
         station_sign_data.append({
-            "position": [lon, lat, 22],
-            "text": symbol,
+            "position": [lon, lat, 35],
+            "text": f"{symbol} {srow['name']}",
             "color": [255, 255, 255, 255]
         })
+        
+    # Inject Static Landmarks
+    landmarks = [
+        {"name": "🏙️ Ikeja CBD", "pos": [3.339, 6.601]},
+        {"name": "🛫 Murtala Muhammed Airport", "pos": [3.321, 6.577]},
+        {"name": "🌉 Third Mainland Bridge", "pos": [3.400, 6.500]},
+        {"name": "🏢 Victoria Island", "pos": [3.421, 6.428]},
+        {"name": "🏟️ Surulere", "pos": [3.350, 6.500]},
+        {"name": "🛍️ Oshodi", "pos": [3.337, 6.556]}
+    ]
+    for lm in landmarks:
+        station_sign_data.append({
+            "position": [lm["pos"][0], lm["pos"][1], 50],
+            "text": lm["name"],
+            "color": [255, 255, 255, 255]
+        })
+
     layers.append(pdk.Layer(
         "ScatterplotLayer", data=pd.DataFrame(station_data),
         get_position="position", get_fill_color="color", get_radius="radius",
-        radius_min_pixels=6, pickable=True,
+        radius_min_pixels=10, pickable=True,
     ))
     if station_sign_data:
         layers.append(pdk.Layer(
@@ -858,7 +937,7 @@ def build_3d_pydeck_chart(
             data=pd.DataFrame(station_sign_data),
             get_position="position",
             get_text="text",
-            get_size=20,
+            get_size=28,
             get_color="color",
             get_alignment_baseline="'center'",
             get_text_anchor="'middle'",
@@ -913,7 +992,6 @@ def build_3d_pydeck_chart(
             
             if is_navigating:
                 traveled_ll = all_ll[:cur_i+1]
-                remaining_ll = all_ll[cur_i:]
                 
                 if len(traveled_ll) >= 2:
                     layers.append(pdk.Layer(
@@ -922,11 +1000,28 @@ def build_3d_pydeck_chart(
                         get_path="path", get_color=[156, 163, 175, 180], get_width=10,
                         width_min_pixels=5, pickable=False,
                     ))
-                if len(remaining_ll) >= 2:
+                
+                # Split remaining route into Leg 1 and Leg 2
+                if cur_i < len(leg1_ll) - 1:
+                    remaining_leg1 = leg1_ll[cur_i:]
+                    remaining_leg2 = leg2_ll
+                else:
+                    remaining_leg1 = []
+                    leg2_start_i = cur_i - (len(leg1_ll) - 1)
+                    remaining_leg2 = leg2_ll[leg2_start_i:] if leg2_ll else []
+                
+                if len(remaining_leg1) >= 2:
                     layers.append(pdk.Layer(
                         "PathLayer",
-                        data=pd.DataFrame([{"path": [[lon, lat, 15] for lat, lon in remaining_ll], "name": "Remaining route"}]),
+                        data=pd.DataFrame([{"path": [[lon, lat, 15] for lat, lon in remaining_leg1], "name": "Remaining Leg 1"}]),
                         get_path="path", get_color=[66, 133, 244, 255], get_width=12,
+                        width_min_pixels=6, pickable=True,
+                    ))
+                if len(remaining_leg2) >= 2:
+                    layers.append(pdk.Layer(
+                        "PathLayer",
+                        data=pd.DataFrame([{"path": [[lon, lat, 25] for lat, lon in remaining_leg2], "name": "Remaining Leg 2"}]),
+                        get_path="path", get_color=[251, 146, 60, 255], get_width=12,
                         width_min_pixels=6, pickable=True,
                     ))
             else:
@@ -947,8 +1042,6 @@ def build_3d_pydeck_chart(
 
     if vehicle_ll:
         vlat, vlon = vehicle_ll
-        outer_arrow = create_vehicle_arrow(vlat, vlon, bearing, size_deg=0.0006)
-        inner_arrow = create_vehicle_arrow(vlat, vlon, bearing, size_deg=0.00045)
         
         # Pulse accuracy halo beneath vehicle
         layers.append(pdk.Layer(
@@ -958,21 +1051,18 @@ def build_3d_pydeck_chart(
             radius_min_pixels=15, pickable=False,
         ))
         
-        # Outer casing chevron (White outline)
+        # High-visibility 3D directional arrow (➤) rotated by heading
         layers.append(pdk.Layer(
-            "PolygonLayer",
-            data=pd.DataFrame([{"polygon": outer_arrow, "color": [255, 255, 255, 255]}]),
-            get_polygon="polygon", get_fill_color="color", extruded=False, pickable=False,
-        ))
-        
-        # Inner active chevron (Google Maps Blue)
-        layers.append(pdk.Layer(
-            "PolygonLayer",
-            data=pd.DataFrame([{"name": "Vehicle Current Location",
-                                "type": "Ambulance / Emergency Unit",
-                                "polygon": inner_arrow,
-                                "color": [37, 99, 235, 255]}]),
-            get_polygon="polygon", get_fill_color="color", extruded=False, pickable=True,
+            "TextLayer",
+            data=pd.DataFrame([{"position": [vlon, vlat, 30], "text": "➤", "bearing": -bearing + 90, "color": [37, 99, 235, 255]}]),
+            get_position="position",
+            get_text="text",
+            get_angle="bearing",
+            get_size=42,
+            get_color="color",
+            get_alignment_baseline="'center'",
+            get_text_anchor="'middle'",
+            pickable=False,
         ))
 
         # Vehicle Floating billboard sign
@@ -994,23 +1084,25 @@ def build_3d_pydeck_chart(
     if is_navigating:
         camera_follow = st.session_state.get("camera_follow", True)
         
-        prev_bearing = st.session_state.get("prev_cam_bearing", bearing)
-        if abs(bearing - prev_bearing) > 10:
+        # Calculate dynamic bearing
+        if camera_follow:
+            # We want the map to physically rotate so the vehicle always points "Up" (like Google Maps)
             cam_bearing = bearing
             st.session_state["prev_cam_bearing"] = bearing
-        else:
-            cam_bearing = prev_bearing
-
-        if camera_follow:
+            
             view_state = pdk.ViewState(
                 latitude=center_lat, longitude=center_lon,
-                zoom=16.5 if force_2d else 18.0, pitch=0 if force_2d else 60, bearing=0 if force_2d else cam_bearing,
-                transition_duration=1000, transition_easing="linear"
+                zoom=16.5 if force_2d else 18.5, 
+                pitch=0 if force_2d else 75, 
+                bearing=0 if force_2d else cam_bearing,
+                transition_duration=0, # Remove transition to avoid jerky fighting with Streamlit reruns
             )
         else:
             view_state = pdk.ViewState(
                 latitude=center_lat, longitude=center_lon,
-                zoom=16.5 if force_2d else 18.0, pitch=0 if force_2d else 60, bearing=0 if force_2d else cam_bearing
+                zoom=16.5 if force_2d else 18.0, 
+                pitch=0 if force_2d else 75, 
+                bearing=st.session_state.get("prev_cam_bearing", 0)
             )
     else:
         view_state = pdk.ViewState(
@@ -1077,6 +1169,27 @@ LAGOS_AREAS = {
 # MAIN APP
 # ══════════════════════════════════════════════════════════════════════════════
 def main():
+    # ── Priority 4: Access Control ─────────────────────────────────────────────
+    if "password_correct" not in st.session_state:
+        st.session_state["password_correct"] = False
+
+    if not st.session_state["password_correct"]:
+        st.markdown("<h2 style='text-align: center; margin-top: 50px;'>🔒 Restricted Access</h2>", unsafe_allow_html=True)
+        pwd = st.text_input("Enter system password:", type="password", key="pwd_input")
+        if pwd:
+            # IMPORTANT: The password must be set in Streamlit Secrets (e.g. .streamlit/secrets.toml)
+            # using the key 'password'. Hardcoded secrets have been removed for security.
+            secret_pwd = st.secrets.get("password")
+            if not secret_pwd:
+                st.error("⚠️ Application password not configured in Streamlit Secrets.")
+            elif pwd == secret_pwd:
+                st.session_state["password_correct"] = True
+                st.rerun()
+            else:
+                st.error("Incorrect password.")
+        st.stop()
+    # ───────────────────────────────────────────────────────────────────────────
+
     st.markdown("""
     <div class="top-banner">
       <div class="logo">🚑</div>
@@ -1085,8 +1198,9 @@ def main():
         <p>Dijkstra Network Routing · Two-Leg Dispatch · Turn-by-Turn Navigation · 3D Visualization · Lagos State, Nigeria</p>
       </div>
       <div class="uni">
-        Makanjuola, Thomas Oluwadamilare<br>125/21/1/0180<br>
-        Abiola Ajimobi Technical University, Ibadan
+        <span style="color: #94a3b8; font-weight: 500;">Candidate:</span> <strong style="color: #fff;">Makanjuola, Thomas Oluwadamilare</strong><br>
+        <span style="color: #94a3b8; font-weight: 500;">Matric No:</span> <strong style="color: #38bdf8;">125/21/1/0180</strong><br>
+        <span style="color: #60a5fa; font-weight: 600;">Abiola Ajimobi Technical University, Ibadan</span>
       </div>
     </div>
     """, unsafe_allow_html=True)
@@ -1199,7 +1313,7 @@ def main():
                 if results:
                     st.session_state["search_results"] = results
                 else:
-                    st.warning("No results found in Lagos.")
+                    st.error("Search unavailable or no results. Please use manual coordinates.")
                     st.session_state["search_results"] = None
             else:
                 st.session_state["search_results"] = None
@@ -1300,36 +1414,46 @@ def main():
         veh_origin_ll = None
 
         if veh_mode == "📍 Use my current location":
-            # Declare browser GPS component
-            gps_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gps_component")
-            gps_component = components.declare_component("gps_component", path=gps_dir)
-            gps_data = gps_component()
-
-            if gps_data:
-                if gps_data.get("error") is None and gps_data.get("lat") is not None:
-                    st.session_state["geo_lat"] = gps_data["lat"]
-                    st.session_state["geo_lon"] = gps_data["lon"]
+            if "geo_consented" not in st.session_state:
+                st.session_state["geo_consented"] = False
+                
+            if not st.session_state["geo_consented"]:
+                st.info("ℹ️ **Privacy Notice:** Your live location is only used to compute the fastest route during this active session. It is not persistently stored, logged, or shared with any external third parties beyond the routing computation itself. You may decline and use manual entry instead.")
+                if st.button("Grant Location Access"):
+                    st.session_state["geo_consented"] = True
+                    st.rerun()
+            else:
+                try:
+                    from streamlit_geolocation import streamlit_geolocation
+                    gps_data = streamlit_geolocation()
+                except ImportError:
+                    st.error("Missing dependency: pip install streamlit-geolocation")
+                    gps_data = None
+    
+                if gps_data and gps_data.get("latitude") and gps_data.get("longitude"):
+                    st.session_state["geo_lat"] = gps_data["latitude"]
+                    st.session_state["geo_lon"] = gps_data["longitude"]
                     st.session_state["geo_granted"] = True
                 else:
                     st.session_state["geo_granted"] = False
-
-            if st.session_state.get("geo_granted") and st.session_state.get("geo_lat"):
-                glat = st.session_state["geo_lat"]
-                glon = st.session_state["geo_lon"]
-                st.success(f"📍 Location active: {glat:.5f}°N, {glon:.5f}°E")
-                vx, vy = ll_to_utm(glat, glon)
-                veh_node, vd = snap_point_to_node(nodes_gdf, Point(vx, vy))
-                veh_origin_ll = (glat, glon)
-                if vd > 600:
-                    st.warning(f"Vehicle snapped {vd:.0f}m to nearest road")
+    
+                if st.session_state.get("geo_granted") and st.session_state.get("geo_lat"):
+                    glat = st.session_state["geo_lat"]
+                    glon = st.session_state["geo_lon"]
+                    st.success(f"📍 Location active: {glat:.5f}°N, {glon:.5f}°E")
+                    vx, vy = ll_to_utm(glat, glon)
+                    veh_node, vd = snap_point_to_node(nodes_gdf, Point(vx, vy))
+                    veh_origin_ll = (glat, glon)
+                    if vd > 600:
+                        st.warning(f"Vehicle snapped {vd:.0f}m to nearest road")
+                    else:
+                        st.caption(f"✅ On road (±{vd:.0f}m)")
                 else:
-                    st.caption(f"✅ On road (±{vd:.0f}m)")
-            else:
-                err_msg = gps_data.get("error") if gps_data else None
-                if err_msg:
-                    st.error(f"❌ GPS Error: {err_msg}")
-                else:
-                    st.info("⏳ Waiting for device GPS authorization...")
+                    err_msg = gps_data.get("error") if gps_data else None
+                    if err_msg:
+                        st.error(f"❌ GPS Error: {err_msg}")
+                    else:
+                        st.info("⏳ Waiting for device GPS authorization...")
 
         elif veh_mode == "Click on map":
             st.session_state["click_mode"] = "vehicle"
@@ -1373,10 +1497,10 @@ def main():
         siren_mode = st.toggle("🚨 Siren Mode (Right-of-way)", value=False, help="Allows emergency vehicles to cautiously travel against one-way restrictions.")
         
         time_of_day = st.selectbox(
-            "🕐 Time of day (Traffic Proxy):",
+            "🕐 Time of day (Static Model - Live API Inactive):",
             ["Off-peak", "Peak morning", "Peak evening"],
             index=0,
-            help="Applies realistic traffic congestion multipliers to the network."
+            help="Applies realistic time-of-day traffic congestion multipliers to the network. Live TomTom traffic API integration is not active in this deployed demo."
         )
         
         all_facilities = stations_gdf["name"].tolist()
@@ -1490,7 +1614,8 @@ def main():
                         result = two_leg_route(G_working, nodes_gdf, inc_node, inc_type, active_stations, blocked_edges=st.session_state["blocked_edges"])
 
             if result is None:
-                st.error("No reachable station found for this location.")
+                st.error("No reachable facility found — try a different location or clear active filters.")
+                st.session_state["result"] = None
             else:
                 if current_veh_node is None:
                     if veh_node is not None and veh_mode not in ("At dispatch station",):
@@ -1509,7 +1634,7 @@ def main():
                     all_path = result.get("leg1_path", []) + result.get("leg2_path", [])
                     for j in range(len(all_path) - 1):
                         u, v = all_path[j], all_path[j+1]
-                        if G_working.has_edge(u, v) and G_working[u][v][0].get("wrong_way"):
+                        if G_working.has_edge(u, v) and G_working[u][v].get("wrong_way"):
                             used_wrong_way = True
                             break
                 result["used_wrong_way"] = used_wrong_way
@@ -1534,7 +1659,9 @@ def main():
                 if result.get("has_leg2") and result.get("leg2_path"):
                     hg = result["leg2_hospital_geom"]
                     exact_h_coord = (hg.x, hg.y) if hg else None
-                    st.session_state["leg2_ll"] = path_to_ll_via_geometry(G, result["leg2_path"], exact_h_coord)
+                    raw_leg2 = path_to_ll_via_geometry(G, result["leg2_path"], exact_h_coord)
+                    # Add microscopic geographical offset (+0.00005 deg) so Leg 2 does not Z-fight or overlap exactly in 3D
+                    st.session_state["leg2_ll"] = [[lon + 0.00005, lat - 0.00005] for lon, lat in raw_leg2]
                 else:
                     st.session_state["leg2_ll"] = []
 
@@ -1602,7 +1729,7 @@ def main():
             rating_txt, rating_cls = response_rating(l1t)
 
             sg_geom = result["leg1_station_geom"]
-            sl_t    = straight_line_time(sg_geom, inc_geom, 20.0) if inc_geom else 0
+            sl_t    = straight_line_time(sg_geom, inc_geom, 12.0) if inc_geom else 0
             ovhd    = ((l1t - sl_t) / sl_t * 100) if sl_t > 0 else 0
 
             kpi_cls   = "green" if l1t <= 5 else "amber" if l1t <= 10 else "red"
@@ -1976,13 +2103,22 @@ def main():
                     cur_street_nav = ed_nav[0]['name']
 
             st.markdown(f"""
-            <div style="background:#0d1f38; padding:12px 20px; border-radius:8px; margin-bottom:12px; border:1px solid rgba(99,179,237,0.25); border-left:4px solid #34d399; display:flex; align-items:center; justify-content:space-between;">
+            <div style="background: linear-gradient(135deg, rgba(13,31,56,0.95), rgba(6,20,38,0.95)); padding:16px 24px; border-radius:12px; margin-bottom:16px; border:1px solid rgba(52,211,153,0.3); border-left:5px solid #10b981; box-shadow: 0 8px 24px rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:space-between; backdrop-filter: blur(10px);">
               <div>
-                <span style="color:#6ee7b7; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; font-size:0.75rem;">Active Navigation Route</span>
-                <div style="color:#f8fafc; font-size:1.1rem; font-weight:bold; margin-top:4px;">📍 {cur_street_nav if cur_street_nav else 'Proceed on Route'}</div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <div style="background:rgba(16,185,129,0.2); padding:4px 8px; border-radius:6px; color:#34d399; font-size:0.7rem; font-weight:800; text-transform:uppercase; letter-spacing:0.1em;">Live Nav</div>
+                  <span style="color:#94a3b8; font-size:0.8rem; font-weight:500;">Current Route</span>
+                </div>
+                <div style="color:#f8fafc; font-size:1.4rem; font-weight:800; margin-top:6px; text-shadow: 0 2px 4px rgba(0,0,0,0.3); display:flex; align-items:center; gap:8px;">
+                  <span style="font-size:1.6rem; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.5));">📍</span> {cur_street_nav if cur_street_nav else 'Proceed on Route'}
+                </div>
               </div>
-              <div style="text-align:right;">
-                <div style="font-size:1.5rem; color:#f8fafc;">{veh_bearing:.0f}° {card_dir}</div>
+              <div style="text-align:right; background:rgba(0,0,0,0.4); padding:10px 16px; border-radius:10px; border:1px solid rgba(255,255,255,0.05);">
+                <div style="font-size:0.7rem; color:#94a3b8; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:2px;">Heading</div>
+                <div style="font-size:1.6rem; font-weight:800; color:#38bdf8; line-height:1; display:flex; align-items:center; gap:6px;">
+                  <div style="transform:rotate({veh_bearing:.1f}deg); font-size:1.4rem; transition: transform 0.3s ease;">🧭</div>
+                  {card_dir}
+                </div>
               </div>
             </div>
             """, unsafe_allow_html=True)
@@ -2006,7 +2142,7 @@ def main():
             
             with st.container():
                 st.markdown("<div class='control-box'>", unsafe_allow_html=True)
-                c_btn1, c_btn2, c_btn3, c_btn4 = st.columns([2, 1, 1, 1.5])
+                c_btn1, c_btn2, c_btn3, c_btn4, c_btn5 = st.columns([2, 1, 1, 1.5, 1.5])
                 with c_btn1:
                     if st.button(trk_label, use_container_width=True, type="primary" if not is_trk else "secondary", key="map_ctrl_trk"):
                         st.session_state["sim_tracking"] = not is_trk
@@ -2027,6 +2163,17 @@ def main():
                     
                     camera_follow = st.toggle("🔒 Follow vehicle", value=st.session_state.get("camera_follow", True), key="map_ctrl_camera_toggle")
                     st.session_state["camera_follow"] = camera_follow
+                with c_btn5:
+                    app_fullscreen = st.toggle("⛶ Fullscreen App", value=st.session_state.get("app_fullscreen", False), key="map_ctrl_fs_toggle")
+                    st.session_state["app_fullscreen"] = app_fullscreen
+                    if app_fullscreen:
+                        st.markdown("""
+                        <style>
+                        .main .block-container { max-width: 100% !important; padding-top: 0 !important; padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
+                        [data-testid="stSidebar"] { display: none !important; }
+                        header[data-testid="stHeader"] { display: none !important; }
+                        </style>
+                        """, unsafe_allow_html=True)
 
                 if is_trk:
                     st.markdown("---")
@@ -2061,10 +2208,16 @@ def main():
                                         st.session_state["trigger_reroute"] = True
                                         st.rerun()
 
-                # Slider
-                prog_val = st.slider("Vehicle Route Progress", 0.0, 1.0,
-                                     step=0.01, format="%.0f%%", key="sim_progress")
+                # Slider (Part B Fix: Accurate percentage sync mapping)
+                # We do NOT use 'key' here so that we can programmatically update the slider's value via the background task.
+                prog_val_ui = st.slider("Vehicle Route Progress", 0, 100,
+                                        value=int(st.session_state.get("sim_progress", 0.0) * 100),
+                                        step=1, format="%d%%")
                 
+                # If the user drags the slider, prog_val_ui changes, and we write it back to sim_progress.
+                # If the background loop changes sim_progress, the slider's value argument reflects it.
+                st.session_state["sim_progress"] = prog_val_ui / 100.0
+                prog_val = st.session_state["sim_progress"]
                 # Speak direction if voice enabled
                 if voice_on and all_dirs:
                     d_idx = min(int(prog_val * (len(all_dirs) - 1)), len(all_dirs) - 1)
@@ -2086,21 +2239,23 @@ def main():
         map_tab1, map_tab2 = st.tabs(["🗺️ 2D Interactive Map (Folium)", "🌐 3D Perspective (Pydeck)"])
         
         with map_tab1:
-            st.caption(f"🗺️ Auto-updating Folium Map · {tile_choice}")
-            import hashlib
-            import copy
-            
-            # Static inputs that define the base network (no dynamic tracking state)
-            hash_tuple = (
-                tile_choice, show_cov, cov_t,
-                st.session_state.get("click_mode"),
-            )
-            map_inputs_hash = hashlib.md5(str(hash_tuple).encode()).hexdigest()
-            
-            if st.session_state.get("cached_map_hash") == map_inputs_hash and "cached_base_map" in st.session_state:
-                base_m_static = st.session_state["cached_base_map"]
+            is_tracking = st.session_state.get("sim_tracking", False)
+            if is_tracking:
+                st.caption(f"🗺️ Live 2D Navigation (Smooth Tracking) · {tile_choice}")
+                build_3d_pydeck_chart(
+                    result=st.session_state.get("result"),
+                    G=G, stations_gdf=stations_gdf, incidents_gdf=incidents_gdf,
+                    sa_polys=sa_polys if show_cov else {},
+                    sim_progress=sim_prog, vehicle_ll=show_veh_ll, bearing=veh_bearing,
+                    is_navigating=is_navigating, tile_choice=tile_choice,
+                    force_2d=True,
+                    exact_dest_coord=exact_dest
+                )
             else:
-                base_m_static = build_navigable_map(
+                st.caption(f"🗺️ Interactive Folium Map · {tile_choice}")
+                # ── PART A1 & A2 FIX: Remove Folium Map Caching ──
+                # Rebuild the map freshly every time to guarantee old routes/markers are entirely wiped out.
+                base_m = build_navigable_map(
                     stations_gdf, incidents_gdf, sa_polys,
                     show_cov=show_cov, cov_t=cov_t,
                     tile_name=tile_choice,
@@ -2111,47 +2266,36 @@ def main():
                     card_dir="N",
                     recenter_ll=None,
                 )
-                st.session_state["cached_base_map"] = base_m_static
-                st.session_state["cached_map_hash"] = map_inputs_hash
             
-            # Deepcopy the base map so we don't permanently add vehicles to it
-            base_m = copy.deepcopy(base_m_static)
-            
-            if st.session_state.get("result"):
-                hg = st.session_state["result"].get("leg2_hospital_geom")
-                exact_h_coord = (hg.x, hg.y) if hg else None
-                base_m, leg1_ll_new, leg2_ll_new = overlay_route(
-                    base_m, st.session_state["result"], G,
-                    sim_progress=sim_prog if sim_prog > 0 else None,
-                    exact_dest_coord=exact_dest,
-                    exact_h_coord=exact_h_coord,
-                )
-            
-            add_dynamic_markers(base_m, show_inc_ll, show_veh_ll, veh_bearing)
-
-            _rv = st.session_state.get("route_version", 0)
-            is_tracking = st.session_state.get("sim_tracking", False)
-            if is_tracking:
-                map_key = f"folium_2d_navigating_rv{_rv}"
-            else:
+                if st.session_state.get("result"):
+                    hg = st.session_state["result"].get("leg2_hospital_geom")
+                    exact_h_coord = (hg.x, hg.y) if hg else None
+                    base_m, leg1_ll_new, leg2_ll_new = overlay_route(
+                        base_m, st.session_state["result"], G,
+                        sim_progress=sim_prog if sim_prog > 0 else None,
+                        exact_dest_coord=exact_dest,
+                        exact_h_coord=exact_h_coord,
+                    )
+                
+                add_dynamic_markers(base_m, show_inc_ll, show_veh_ll, veh_bearing)
+    
+                _rv = st.session_state.get("route_version", 0)
                 map_key = f"folium_2d_rv{_rv}_prog{sim_prog:.3f}_inc{st.session_state.get('clicked_inc_lat')}_{st.session_state.get('clicked_inc_lon')}_veh{st.session_state.get('clicked_veh_lat')}_{st.session_state.get('clicked_veh_lon')}"
-            
-            camera_follow = st.session_state.get("camera_follow", True)
-            center_args = {}
-            if is_tracking and camera_follow and show_veh_ll:
-                center_args = {"center": show_veh_ll, "zoom": 15}
-            elif recenter_ll:
-                center_args = {"center": recenter_ll, "zoom": 13}
-            
-            map_data = st_folium(
-                base_m,
-                height=800,
-                width="stretch",
-                returned_objects=["last_clicked"],
-                key=map_key,
-                **center_args
-            )
-            st.session_state["last_rendered_map_key"] = map_key
+                
+                camera_follow = st.session_state.get("camera_follow", True)
+                center_args = {}
+                if recenter_ll:
+                    center_args = {"center": recenter_ll, "zoom": 13}
+                
+                map_data = st_folium(
+                    base_m,
+                    height=800,
+                    width="stretch",
+                    returned_objects=["last_clicked"],
+                    key=map_key,
+                    **center_args
+                )
+                st.session_state["last_rendered_map_key"] = map_key
 
         with map_tab2:
             st.caption(f"🌐 Native 3D Perspective — Tilted Pitch (45°) · {tile_choice}")
@@ -2167,35 +2311,45 @@ def main():
 
     # ── CHARTS ────────────────────────────────────────────────────────────────
     st.markdown("---")
-    with st.expander("📊 System Analytics & Routing Batch Results", expanded=False):
-        tab1, tab2, tab3 = st.tabs([
-            "📊 Response Time Comparison",
-            "🗺️ Service Area Coverage",
-            "📈 Time Distribution",
-        ])
-        with tab1:
-            if os.path.exists("outputs/comparison_chart.png"):
-                st.image("outputs/comparison_chart.png",
-                         caption="Network-Optimised (Dijkstra) vs Straight-Line Baseline — All 20 Incidents",
-                         use_container_width=True)
-            else:
-                st.info("Run `python run_all.py` to generate analysis charts.")
-        with tab2:
-            if os.path.exists("outputs/service_area_map.png"):
-                st.image("outputs/service_area_map.png",
-                         caption="Service Area Analysis — SA_t(s) = {v ∈ V | d(s,v) ≤ t}, t = 5, 10, 15 min",
-                         use_container_width=True)
-        with tab3:
-            if os.path.exists("outputs/response_time_hist.png"):
-                st.image("outputs/response_time_hist.png",
-                         caption="Distribution of Ambulance Response Times — All Incidents",
-                         use_container_width=True)
+    st.markdown("### 📊 System Analytics & Routing Batch Results")
+    st.markdown("""
+    <div style="background: rgba(13, 25, 48, 0.6); padding: 16px; border-radius: 12px; border: 1px solid rgba(99, 179, 237, 0.2); margin-bottom: 16px;">
+        <span style="color:#94a3b8; font-size:0.9rem;">Review comprehensive network performance metrics and batch routing results below.</span>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    tab1, tab2, tab3 = st.tabs([
+        "📊 Response Time Comparison",
+        "🗺️ Service Area Coverage",
+        "📈 Time Distribution",
+    ])
+    with tab1:
+        if os.path.exists("outputs.zip"):
+            with open("outputs.zip", "rb") as f:
+                st.download_button("📥 Download Analysis Reports (.zip)", f, file_name="routing_analysis_reports.zip", mime="application/zip", use_container_width=True, type="primary")
+        
+        if os.path.exists("outputs/comparison_chart.png"):
+            st.image("outputs/comparison_chart.png",
+                     caption="Network-Optimised (Dijkstra) vs Straight-Line Baseline — All 20 Incidents",
+                     use_container_width=True)
+        else:
+            st.info("Run `python run_all.py` to generate analysis charts.")
+    with tab2:
+        if os.path.exists("outputs/service_area_map.png"):
+            st.image("outputs/service_area_map.png",
+                     caption="Service Area Analysis — SA_t(s) = {v ∈ V | d(s,v) ≤ t}, t = 5, 10, 15 min",
+                     use_container_width=True)
+    with tab3:
+        if os.path.exists("outputs/response_time_hist.png"):
+            st.image("outputs/response_time_hist.png",
+                     caption="Distribution of Ambulance Response Times — All Incidents",
+                     use_container_width=True)
 
     st.markdown("""
-    <div style="text-align:center;padding:.9rem 0 .4rem;color:#334155;font-size:.68rem;
-                border-top:1px solid rgba(255,255,255,.05)">
-      GIS-Based Optimal Ambulance Routing &amp; Emergency Response Time Analysis using Network Analysis ·
-      Makanjuola, Thomas Oluwadamilare (125/21/1/0180) ·
+    <div style="text-align:center;padding:1.5rem 0 1rem;color:#475569;font-size:0.75rem;
+                border-top:1px solid rgba(255,255,255,0.05); margin-top:2rem;">
+      <b style="color:#64748b;">GIS-Based Optimal Ambulance Routing &amp; Emergency Response Time Analysis using Network Analysis</b><br>
+      Makanjuola, Thomas Oluwadamilare (125/21/1/0180)<br>
       Abiola Ajimobi Technical University, Ibadan · 2026
     </div>
     """, unsafe_allow_html=True)
