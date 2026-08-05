@@ -966,10 +966,14 @@ def build_3d_pydeck_chart(
             data=pd.DataFrame(station_sign_data),
             get_position="position",
             get_text="text",
-            get_size=28,
+            get_size=16,
             get_color="color",
             get_alignment_baseline="'center'",
             get_text_anchor="'middle'",
+            background=True,
+            get_background_color=[15, 23, 42, 210],  # Slate 900 semi-transparent
+            font_family="'Inter', sans-serif",
+            font_weight="bold",
             pickable=True,
         ))
 
@@ -1000,10 +1004,14 @@ def build_3d_pydeck_chart(
             data=pd.DataFrame(inc_sign_data),
             get_position="position",
             get_text="text",
-            get_size=20,
+            get_size=18,
             get_color="color",
             get_alignment_baseline="'center'",
             get_text_anchor="'middle'",
+            background=True,
+            get_background_color=[185, 28, 28, 210], # Red-700 semi-transparent for incidents
+            font_family="'Inter', sans-serif",
+            font_weight="bold",
             pickable=True,
         ))
 
