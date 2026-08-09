@@ -6,3 +6,7 @@ __pycache__/
 .qodo/
 .vscode/
 .streamlit/
+~$*
+*.qgz
+data/road_network_cache.pkl
+outputs.zip
