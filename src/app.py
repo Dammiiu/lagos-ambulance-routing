@@ -232,15 +232,34 @@ st.markdown("""
 .geo-denied { background:rgba(185,28,28,0.08);border:1px solid rgba(185,28,28,0.25);
     border-radius:8px;padding:0.55rem 0.8rem;font-size:0.74rem;color:#f87171;margin-top:0.3rem; }
 
-/* ── Priority 4: Mobile Responsiveness ── */
+/* ── Mobile & Responsive Design (consolidated) ── */
 @media (max-width: 768px) {
-    .main .block-container { padding: 0.5rem; }
-    .top-banner { flex-direction: column; text-align: center; gap: 0.5rem; padding: 1rem; }
-    .top-banner .uni { text-align: center; margin-left: 0; }
-    .kpi-row { flex-direction: column; }
-    .result-panel { padding: 0.8rem; }
+    .main .block-container { padding: 0.4rem 0.3rem; }
+    .top-banner { flex-direction: column; text-align: center; gap: 0.5rem; padding: 0.8rem 0.6rem; }
+    .top-banner h1 { font-size: 1rem; }
+    .top-banner p  { font-size: 0.68rem; }
+    .top-banner .logo { font-size: 1.8rem; }
+    .top-banner .uni { text-align: center; margin-left: 0; border-left: none; padding-left: 0;
+        border-top: 2px solid #3b82f6; padding-top: 0.5rem; white-space: normal; font-size: 0.72rem; }
+    .kpi-row { flex-direction: column; gap: 0.35rem; }
+    .kpi-card { width: 100% !important; margin-bottom: 0; }
+    .kpi-val { font-size: 1.15rem; }
+    .result-panel { padding: 0.65rem; margin-bottom: 0.35rem; }
+    .leg-card { padding: 0.55rem 0.65rem; }
+    .dir-box { max-height: 180px; font-size: 0.72rem; }
+    .sim-stat { padding: 6px !important; }
+    .sim-val, .live-val { font-size: 1rem; }
     /* Increase touch targets for buttons */
-    .stButton > button { padding: 0.75rem 1rem !important; font-size: 1rem !important; }
+    .stButton > button { padding: 0.65rem 0.8rem !important; font-size: 0.9rem !important;
+        min-height: 44px !important; }
+    /* Fix Streamlit columns on mobile */
+    div[data-testid="column"] { width: 100% !important; max-width: 100% !important; flex: 1 1 100% !important; }
+    /* Sidebar full width on mobile */
+    div[data-testid="stSidebar"] { min-width: 100vw !important; max-width: 100vw !important; }
+    /* Map containers */
+    div[data-testid="stDeckGlJsonChart"] { height: 65vh !important; }
+    iframe { max-height: 65vh !important; }
+    .pydeck-legend-container { display: none !important; }
 }
 
 /* ── Prevent Streamlit rerun indicators & stale element dimming during tracking ── */
@@ -354,20 +373,11 @@ input::placeholder, textarea::placeholder { color: #ffffff !important; opacity: 
     box-shadow:0 4px 12px rgba(37,99,235,0.4);transition:all 0.2s;
 }
 
-/* Responsive Enhancements */
+/* Tablet breakpoint */
 @media (max-width: 1024px) {
     .stApp .row-widget { flex-direction: column !important; }
     div[data-testid="column"] { width: 100% !important; max-width: 100% !important; flex: 1 1 100% !important; }
-}
-
-@media (max-width: 768px) {
-    .stApp header { background-color: transparent !important; }
-    div[data-testid="stSidebar"] { min-width: 100% !important; max-width: 100% !important; }
-    .kpi-row { flex-direction: column !important; }
-    .kpi-card { width: 100% !important; margin-bottom: 0.5rem; }
-    .sim-stat { padding: 8px !important; margin: 4px 0 !important; }
-    div[data-testid="stDeckGlJsonChart"] { height: 75vh !important; } /* Allow scrolling below map on mobile */
-    .pydeck-legend-container { display: none !important; } /* Hide 3D legend overlay on small screens to save space */
+    .top-banner h1 { font-size: 1.15rem; }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -1212,25 +1222,23 @@ LAGOS_AREAS = {
 # MAIN APP
 # ══════════════════════════════════════════════════════════════════════════════
 def main():
-    # ── Priority 4: Access Control ─────────────────────────────────────────────
-    if "password_correct" not in st.session_state:
-        st.session_state["password_correct"] = False
-
-    if not st.session_state["password_correct"]:
-        st.markdown("<h2 style='text-align: center; margin-top: 50px;'>🔒 Restricted Access</h2>", unsafe_allow_html=True)
-        pwd = st.text_input("Enter system password:", type="password", key="pwd_input")
-        if pwd:
-            # IMPORTANT: The password must be set in Streamlit Secrets (e.g. .streamlit/secrets.toml)
-            # using the key 'password'. Hardcoded secrets have been removed for security.
-            secret_pwd = st.secrets.get("password")
-            if not secret_pwd:
-                st.error("⚠️ Application password not configured in Streamlit Secrets.")
-            elif pwd == secret_pwd:
-                st.session_state["password_correct"] = True
-                st.rerun()
-            else:
-                st.error("Incorrect password.")
-        st.stop()
+    # ── Priority 4: Access Control (TEMPORARILY DISABLED) ──────────────────────
+    # To re-enable password protection, uncomment the block below:
+    # if "password_correct" not in st.session_state:
+    #     st.session_state["password_correct"] = False
+    # if not st.session_state["password_correct"]:
+    #     st.markdown("<h2 style='text-align: center; margin-top: 50px;'>🔒 Restricted Access</h2>", unsafe_allow_html=True)
+    #     pwd = st.text_input("Enter system password:", type="password", key="pwd_input")
+    #     if pwd:
+    #         secret_pwd = st.secrets.get("password")
+    #         if not secret_pwd:
+    #             st.error("⚠️ Application password not configured in Streamlit Secrets.")
+    #         elif pwd == secret_pwd:
+    #             st.session_state["password_correct"] = True
+    #             st.rerun()
+    #         else:
+    #             st.error("Incorrect password.")
+    #     st.stop()
     # ───────────────────────────────────────────────────────────────────────────
 
     st.markdown("""
@@ -1429,7 +1437,7 @@ def main():
                 inc_lat = st.number_input("Lat (°N)", value=float(default_lat),
                                           format="%.5f", step=0.001, key="inc_lat_in")
             with c2:
-                default_lon = st.session_state.get("clicked_inc_lat") or 3.375
+                default_lon = st.session_state.get("clicked_inc_lon") or 3.375
                 inc_lon = st.number_input("Lon (°E)", value=float(default_lon),
                                           format="%.5f", step=0.001, key="inc_lon_in")
             cx, cy  = ll_to_utm(inc_lat, inc_lon)
@@ -2026,7 +2034,7 @@ def main():
                         st.warning("⚠️ Off route — recalculating…")
                         
                     # Calculate real vehicle speed dynamically
-                    import time
+                    # time module already imported at top level
                     cur_time = time.time()
                     live_speed = None
                     if live_lat and live_lon:

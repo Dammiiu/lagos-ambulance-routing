@@ -1,21 +1,21 @@
 incident_id,incident_type,nearest_station,facility_type,network_time_min,straight_line_time_min,percent_improvement,leg2_hospital,leg2_time_min,total_time_min
-0,Medical,"Critical Rescue International, Ikeja",medical,2.814,3.773,-25.4,"Shepherd Medical Centre, Ikeja",2.997,5.811
-1,Fire,Alausa Fire Station,fire,3.532,3.242,9.0,N/A,,3.532
-2,Medical,"Shepherd Medical Centre, Ikeja",medical,2.225,3.745,-40.6,"Shepherd Medical Centre, Ikeja",2.231,4.456
-3,Medical,"Shepherd Medical Centre, Ikeja",medical,4.278,7.045,-39.3,"Shepherd Medical Centre, Ikeja",4.218,8.496
-4,Fire,Alausa Fire Station,fire,3.269,3.213,1.7,N/A,,3.269
-5,Medical,Lagos State University Teaching Hospital,medical,1.845,2.745,-32.8,Lagos State University Teaching Hospital,2.618,4.463
-6,Fire,Alausa Fire Station,fire,1.222,0.922,32.6,N/A,,1.222
-7,Fire,Alausa Fire Station,fire,4.17,5.305,-21.4,N/A,,4.17
-8,RTA,"Eko Hospital, Ikeja",medical,1.893,2.552,-25.8,Reddington Hospital - Ikeja GRA,2.679,4.572
-9,Fire,Ikeja Fire Station,fire,1.338,0.66,102.9,N/A,,1.338
-10,RTA,"Shepherd Medical Centre, Ikeja",medical,1.801,2.015,-10.6,"Shepherd Medical Centre, Ikeja",1.74,3.542
-11,Fire,Alausa Fire Station,fire,1.307,1.461,-10.5,N/A,,1.307
-12,Fire,Ikeja Fire Station,fire,1.535,1.85,-17.0,N/A,,1.535
-13,RTA,"Shepherd Medical Centre, Ikeja",medical,4.772,8.559,-44.2,"Shepherd Medical Centre, Ikeja",4.395,9.168
-14,RTA,"Shepherd Medical Centre, Ikeja",medical,4.665,8.179,-43.0,"Shepherd Medical Centre, Ikeja",4.407,9.072
-15,Fire,Alausa Fire Station,fire,2.842,4.62,-38.5,N/A,,2.842
-16,Medical,"Shepherd Medical Centre, Ikeja",medical,0.806,1.257,-35.9,"Shepherd Medical Centre, Ikeja",1.125,1.931
-17,RTA,Lagos State University Teaching Hospital,medical,1.461,2.455,-40.5,Lagos State University Teaching Hospital,2.205,3.666
-18,Medical,"Shepherd Medical Centre, Ikeja",medical,3.547,7.641,-53.6,"Shepherd Medical Centre, Ikeja",3.551,7.098
-19,Medical,"Shepherd Medical Centre, Ikeja",medical,3.818,7.178,-46.8,"Shepherd Medical Centre, Ikeja",3.575,7.393
+0,Medical,Zoe Medical Centre,medical,5.976,7.503,-20.3,"Shepherd Medical Centre, Ikeja",6.594,12.57
+1,Fire,Alausa Fire Station,fire,7.771,8.104,-4.1,N/A,,7.771
+2,Medical,"Shepherd Medical Centre, Ikeja",medical,4.896,9.362,-47.7,"Shepherd Medical Centre, Ikeja",4.908,9.804
+3,Medical,"Shepherd Medical Centre, Ikeja",medical,9.411,17.612,-46.6,"Shepherd Medical Centre, Ikeja",9.28,18.691
+4,Fire,Alausa Fire Station,fire,7.192,8.032,-10.5,N/A,,7.192
+5,Medical,Lagos State University Teaching Hospital,medical,4.059,6.863,-40.9,Zoe Medical Centre,4.943,9.002
+6,Fire,Alausa Fire Station,fire,2.689,2.304,16.7,N/A,,2.689
+7,Fire,Alausa Fire Station,fire,9.175,13.263,-30.8,N/A,,9.175
+8,RTA,"Eko Hospital, Ikeja",medical,4.165,6.379,-34.7,Reddington Hospital - Ikeja GRA,5.893,10.059
+9,Fire,Ikeja Fire Station,fire,2.944,1.649,78.5,N/A,,2.944
+10,RTA,"Shepherd Medical Centre, Ikeja",medical,3.963,5.037,-21.3,"Shepherd Medical Centre, Ikeja",3.829,7.792
+11,Fire,Alausa Fire Station,fire,2.876,3.652,-21.2,N/A,,2.876
+12,Fire,Ikeja Fire Station,fire,3.378,4.626,-27.0,N/A,,3.378
+13,RTA,"Shepherd Medical Centre, Ikeja",medical,10.499,21.397,-50.9,"Shepherd Medical Centre, Ikeja",9.669,20.169
+14,RTA,"Shepherd Medical Centre, Ikeja",medical,10.264,20.448,-49.8,"Shepherd Medical Centre, Ikeja",9.695,19.959
+15,Fire,Alausa Fire Station,fire,6.253,11.551,-45.9,N/A,,6.253
+16,Medical,"Shepherd Medical Centre, Ikeja",medical,1.773,3.141,-43.6,"Shepherd Medical Centre, Ikeja",2.475,4.247
+17,RTA,Zoe Medical Centre,medical,2.891,2.579,12.1,Zoe Medical Centre,3.364,6.254
+18,Medical,"Shepherd Medical Centre, Ikeja",medical,7.803,19.102,-59.1,"Shepherd Medical Centre, Ikeja",7.813,15.616
+19,Medical,"Shepherd Medical Centre, Ikeja",medical,8.4,17.946,-53.2,"Shepherd Medical Centre, Ikeja",7.864,16.265

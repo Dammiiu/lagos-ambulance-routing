@@ -107,7 +107,7 @@ for i, inc in incidents_gdf.iterrows():
         continue
 
     s_geom = r2["leg1_station_geom"]
-    sl = straight_line_time(s_geom, inc_geom, speed_kmh=30.0)
+    sl = straight_line_time(s_geom, inc_geom, speed_kmh=12.0)
     net = r2["leg1_time_min"]
     pct = ((net - sl) / sl * 100) if sl > 0 else float("nan")
 
@@ -237,5 +237,10 @@ print("Saved: outputs/response_time_hist.png")
 print("\n" + "="*65)
 print("ALL STEPS D-G COMPLETE — outputs/ is ready")
 print("="*65)
+
+import shutil
+shutil.make_archive("outputs", "zip", "outputs")
+print("Created outputs.zip for easy download.")
+
 print("\nTo launch the app:")
 print("  venv\\Scripts\\streamlit run src\\app.py")
