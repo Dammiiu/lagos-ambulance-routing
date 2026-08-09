@@ -910,18 +910,25 @@ def build_3d_pydeck_chart(
             opacity=1.0,
             pickable=False
         ))
+        
+        # Add a Street Labels layer on top of the satellite imagery so streets are identifiable
+        layers.append(pdk.Layer(
+            "TileLayer",
+            data="https://a.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}.png",
+            opacity=0.8,
+            pickable=False
+        ))
 
     # Add Live Traffic Tile Layer if TOMTOM_API_KEY is configured
     tomtom_api_key = st.secrets.get("TOMTOM_API_KEY")
     if tomtom_api_key:
-        layers.insert(1 if is_navigating else 0, pdk.Layer(
+        layers.append(pdk.Layer(
             "TileLayer",
             data=f"https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{{z}}/{{x}}/{{y}}.png?key={tomtom_api_key}",
             opacity=0.7,
             pickable=False,
             tile_size=256,
             max_requests=-1,
-            # Make sure pydeck knows to map {x} {y} {z} correctly for this string
         ))
 
     # Always show service areas (if any) so the map doesn't look empty
@@ -975,14 +982,14 @@ def build_3d_pydeck_chart(
             data=pd.DataFrame(station_sign_data),
             get_position="position",
             get_text="text",
-            get_size=14,
-            size_min_pixels=12,
-            size_max_pixels=16,
+            get_size=18,
+            size_min_pixels=16,
+            size_max_pixels=32,
             get_color="color",
             get_alignment_baseline="'center'",
             get_text_anchor="'middle'",
             background=True,
-            get_background_color=[15, 23, 42, 210],
+            get_background_color=[15, 23, 42, 230],
             font_family="'Inter', sans-serif",
             font_weight="bold",
             pickable=True,
@@ -1016,14 +1023,14 @@ def build_3d_pydeck_chart(
             data=pd.DataFrame(inc_sign_data),
             get_position="position",
             get_text="text",
-            get_size=14,
-            size_min_pixels=12,
-            size_max_pixels=16,
+            get_size=24,
+            size_min_pixels=18,
+            size_max_pixels=36,
             get_color="color",
             get_alignment_baseline="'center'",
             get_text_anchor="'middle'",
             background=True,
-            get_background_color=[185, 28, 28, 210],
+            get_background_color=[185, 28, 28, 230],
             font_family="'Inter', sans-serif",
             font_weight="bold",
             pickable=True,
@@ -1173,7 +1180,7 @@ def build_3d_pydeck_chart(
     deck = pdk.Deck(
         layers=layers, initial_view_state=view_state,
         map_style=map_style,
-        tooltip={"text": "{name}\n{type}"},
+        tooltip={"html": "<b>{name}</b><br/><i>{type}</i>", "style": {"backgroundColor": "#0d1f38", "color": "white"}},
     )
     st.pydeck_chart(deck, use_container_width=True, height=800, key="pydeck_navigation_chart")
 
