@@ -367,10 +367,19 @@ input::placeholder, textarea::placeholder { color: #ffffff !important; opacity: 
 }
 
 /* Sidebar primary button */
+[data-testid="stSidebar"] [data-testid="stButton"] {
+    position: sticky;
+    bottom: 20px;
+    z-index: 999;
+}
 [data-testid="stSidebar"] .stButton>button {
     background:linear-gradient(135deg,#1d4ed8,#2563eb) !important;
     color:white !important;border:none;border-radius:8px;font-weight:600;
-    box-shadow:0 4px 12px rgba(37,99,235,0.4);transition:all 0.2s;
+    box-shadow:0 8px 16px rgba(37,99,235,0.6);transition:all 0.2s;
+}
+[data-testid="stSidebar"] .stButton>button:hover {
+    transform: translateY(-2px);
+    box-shadow:0 10px 20px rgba(37,99,235,0.8);
 }
 
 /* Tablet breakpoint */
@@ -907,11 +916,12 @@ def build_3d_pydeck_chart(
     if tomtom_api_key:
         layers.insert(1 if is_navigating else 0, pdk.Layer(
             "TileLayer",
-            data=[f"https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{{z}}/{{x}}/{{y}}.png?key={tomtom_api_key}"],
-            opacity=1.0,
+            data=f"https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{{z}}/{{x}}/{{y}}.png?key={tomtom_api_key}",
+            opacity=0.7,
             pickable=False,
             tile_size=256,
-            max_requests=-1
+            max_requests=-1,
+            # Make sure pydeck knows to map {x} {y} {z} correctly for this string
         ))
 
     # Always show service areas (if any) so the map doesn't look empty
@@ -1606,7 +1616,7 @@ def main():
                         # Apply Siren Mode (wrong way)
                         if d.get("wrong_way"):
                             if siren_mode:
-                                d["time_min"] = d["time_min"] * 2.5 # Apply right-of-way caution penalty
+                                d["time_min"] = d.get("base_time_min", 1.0) * 2.5 # Apply right-of-way caution penalty
                             else:
                                 d["time_min"] = float('inf')
                 
@@ -1667,6 +1677,11 @@ def main():
             if result is None:
                 st.error("No reachable facility found — try a different location or clear active filters.")
                 st.session_state["result"] = None
+            elif (result.get("leg1_time_min", 0) > 0 and len(result.get("leg1_path", [])) == 0) or \
+                 (result.get("leg2_time_min", 0) > 0 and len(result.get("leg2_path", [])) == 0):
+                st.error("🚨 Route Connectivity Error: The generated path is broken or disconnected.")
+                st.session_state["result"] = None
+                result = None
             else:
                 if current_veh_node is None:
                     if veh_node is not None and veh_mode not in ("At dispatch station",):
@@ -2444,8 +2459,7 @@ def main():
                 add_dynamic_markers(base_m, show_inc_ll, show_veh_ll, veh_bearing)
     
                 _rv = st.session_state.get("route_version", 0)
-                map_key = f"folium_2d_rv{_rv}_prog{sim_prog:.3f}_inc{st.session_state.get('clicked_inc_lat')}_{st.session_state.get('clicked_inc_lon')}_veh{st.session_state.get('clicked_veh_lat')}_{st.session_state.get('clicked_veh_lon')}"
-                
+                map_key = f"folium_2d_rv{_rv}_inc{st.session_state.get('clicked_inc_lat')}_{st.session_state.get('clicked_inc_lon')}_veh{st.session_state.get('clicked_veh_lat')}_{st.session_state.get('clicked_veh_lon')}"
                 camera_follow = st.session_state.get("camera_follow", True)
                 center_args = {}
                 if recenter_ll:

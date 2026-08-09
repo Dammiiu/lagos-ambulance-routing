@@ -233,40 +233,54 @@ def path_to_detailed_coords(G: nx.DiGraph, path: list, exact_dest_coord: tuple =
 
     if exact_dest_coord and len(all_coords) >= 2:
         try:
-            # We should only project the point onto the final segment of the route to avoid false matches
-            # The final segment is roughly the last edge added. We can just take the last 10 points.
-            last_segment_coords = all_coords[-10:] if len(all_coords) > 10 else all_coords
-            line = LineString(last_segment_coords)
+            # Create LineString from all coordinates
+            line = LineString(all_coords)
             pt = Point(exact_dest_coord)
+            
+            # Find the distance along the line to the projected point
             proj_dist = line.project(pt)
             
-            truncated_last = []
-            accumulated = 0.0
-            for i in range(1, len(last_segment_coords)):
-                p1 = last_segment_coords[i-1]
-                p2 = last_segment_coords[i]
-                d = math.sqrt((p2[0]-p1[0])**2 + (p2[1]-p1[1])**2)
+            # If the projected distance is very small, or the line is very short, keep it as is
+            if proj_dist > 0:
+                truncated_coords = []
+                accumulated = 0.0
                 
-                if accumulated + d >= proj_dist:
-                    rem = proj_dist - accumulated
-                    ratio = rem / d if d > 0 else 0
-                    nx_coord = p1[0] + ratio * (p2[0] - p1[0])
-                    ny_coord = p1[1] + ratio * (p2[1] - p1[1])
-                    truncated_last.append(p1)
-                    truncated_last.append((nx_coord, ny_coord))
-                    break
-                truncated_last.append(p1)
-                accumulated += d
-            
-            truncated_last.append(exact_dest_coord)
-            
-            # Combine the unmodified beginning with the truncated end
-            if len(all_coords) > 10:
-                all_coords = all_coords[:-10] + truncated_last
-            else:
-                all_coords = truncated_last
-        except Exception:
-            pass
+                # Iterate through segments
+                for i in range(1, len(all_coords)):
+                    p1 = all_coords[i-1]
+                    p2 = all_coords[i]
+                    d = math.sqrt((p2[0]-p1[0])**2 + (p2[1]-p1[1])**2)
+                    
+                    if accumulated + d >= proj_dist:
+                        # The projected point falls on this segment
+                        rem = proj_dist - accumulated
+                        ratio = rem / d if d > 0 else 0
+                        nx_coord = p1[0] + ratio * (p2[0] - p1[0])
+                        ny_coord = p1[1] + ratio * (p2[1] - p1[1])
+                        
+                        truncated_coords.append(p1)
+                        # Add the exact destination to ensure it terminates exactly there
+                        
+                        # Only add the projected point if it's not identical to p1
+                        if ratio > 0.001:
+                            truncated_coords.append((nx_coord, ny_coord))
+                        
+                        # Calculate distance between projected point and exact dest
+                        snap_dist = math.sqrt((nx_coord - exact_dest_coord[0])**2 + (ny_coord - exact_dest_coord[1])**2)
+                        
+                        # Only append the exact destination if it's reasonably close (e.g. 500m)
+                        # to prevent wild jumps across the map if snapping went wrong
+                        if snap_dist < 500:
+                            truncated_coords.append(exact_dest_coord)
+                            
+                        all_coords = truncated_coords
+                        break
+                    
+                    truncated_coords.append(p1)
+                    accumulated += d
+                    
+        except Exception as e:
+            print(f"[network_builder] Warning: Route truncation failed: {e}")
 
     return all_coords
 
