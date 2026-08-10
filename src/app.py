@@ -1476,8 +1476,7 @@ def main():
         fire_15_pct = 100*fire_15/total_nodes
 
         import textwrap
-        stats_html = textwrap.dedent(f"""
-        <div class="stat-group">
+        stats_html = textwrap.dedent(f"""<div class="stat-group">
             <div class="stat-header">📊 System Overview</div>
             <div class="stat-row">
                 <span>🛣️ Road Network</span>
@@ -1496,35 +1495,29 @@ def main():
                 <span class="badge-value">{len(incidents_gdf)}</span>
             </div>
         </div>
-        
         <div class="stat-group">
             <div class="stat-header">⏱️ Network Coverage Analysis</div>
-            
             <div class="stat-row" style="margin-bottom: 0;">
                 <span>5-Min Medical coverage</span>
                 <span class="badge-value" style="color:#60a5fa">{med_5:.0f}%</span>
             </div>
             <div class="bar-container"><div class="med-bar" style="width: {med_5}%"></div></div>
-            
             <div class="stat-row" style="margin-bottom: 0;">
                 <span>5-Min Fire coverage</span>
                 <span class="badge-value" style="color:#f87171">{fire_5:.0f}%</span>
             </div>
             <div class="bar-container"><div class="fire-bar" style="width: {fire_5}%"></div></div>
-            
             <div class="stat-row" style="margin-bottom: 0;">
                 <span>10-Min Medical coverage</span>
                 <span class="badge-value" style="color:#60a5fa">{med_10_pct:.0f}%</span>
             </div>
             <div class="bar-container"><div class="med-bar" style="width: {med_10_pct}%"></div></div>
-            
             <div class="stat-row" style="margin-bottom: 0;">
                 <span>10-Min Fire coverage</span>
                 <span class="badge-value" style="color:#f87171">{fire_10_pct:.0f}%</span>
             </div>
             <div class="bar-container"><div class="fire-bar" style="width: {fire_10_pct}%"></div></div>
-        </div>
-        """)
+        </div>""")
         st.markdown(stats_html, unsafe_allow_html=True)
     
     # ── Emergency Dispatch Panel (Main Screen Top, Easily Accessible) ──
