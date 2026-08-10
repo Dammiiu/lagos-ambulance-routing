@@ -894,6 +894,7 @@ def build_3d_pydeck_chart(
     sim_progress=0.0, vehicle_ll=None, bearing=0.0,
     is_navigating=False, tile_choice="OpenStreetMap", force_2d=False, exact_dest_coord=None
 ):
+    camera_follow = False
     layers = []
 
     if "Street" in tile_choice or "Light" in tile_choice or tile_choice in ["OpenStreetMap", "CartoDB positron"]:
@@ -1186,7 +1187,13 @@ def build_3d_pydeck_chart(
         map_style=map_style,
         tooltip={"html": "<b>{name}</b><br/><i>{type}</i>", "style": {"backgroundColor": "#0d1f38", "color": "white"}},
     )
-    st.pydeck_chart(deck, use_container_width=True, height=800, key="pydeck_navigation_chart")
+    
+    # Use dynamic key during navigation follow mode to force Pydeck context to mount/re-center on the vehicle
+    pdk_key = "pydeck_navigation_chart"
+    if is_navigating and camera_follow:
+        pdk_key = f"pydeck_chart_nav_{center_lat:.6f}_{center_lon:.6f}"
+        
+    st.pydeck_chart(deck, use_container_width=True, height=800, key=pdk_key)
 
     # Overlay 3D map legend using absolute negative-margin container positioning
     tomtom_key_present = bool(st.secrets.get("TOMTOM_API_KEY"))
@@ -1776,13 +1783,22 @@ def main():
                 
                 # Precompute leg1_ll and leg2_ll immediately
                 exact_dest = (inc_geom.x, inc_geom.y) if inc_geom else None
-                st.session_state["leg1_ll"] = path_to_ll_via_geometry(G, result["leg1_path"], exact_dest)
-                if result.get("has_leg2") and result.get("leg2_path"):
-                    hg = result["leg2_hospital_geom"]
-                    exact_h_coord = (hg.x, hg.y) if hg else None
-                    raw_leg2 = path_to_ll_via_geometry(G, result["leg2_path"], exact_h_coord)
+                if result.get("live_traffic_active") and "leg1_ll_direct" in result:
+                    st.session_state["leg1_ll"] = result["leg1_ll_direct"]
+                else:
+                    st.session_state["leg1_ll"] = path_to_ll_via_geometry(G, result["leg1_path"], exact_dest)
+                
+                if result.get("has_leg2"):
+                    if result.get("live_traffic_active") and "leg2_ll_direct" in result:
+                        raw_leg2 = result["leg2_ll_direct"]
+                    elif result.get("leg2_path"):
+                        hg = result["leg2_hospital_geom"]
+                        exact_h_coord = (hg.x, hg.y) if hg else None
+                        raw_leg2 = path_to_ll_via_geometry(G, result["leg2_path"], exact_h_coord)
+                    else:
+                        raw_leg2 = []
                     # Add microscopic geographical offset (+0.00005 deg) so Leg 2 does not Z-fight or overlap exactly in 3D
-                    st.session_state["leg2_ll"] = [[lon + 0.00005, lat - 0.00005] for lon, lat in raw_leg2]
+                    st.session_state["leg2_ll"] = [[lat + 0.00005, lon - 0.00005] for lat, lon in raw_leg2]
                 else:
                     st.session_state["leg2_ll"] = []
 
