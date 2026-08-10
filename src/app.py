@@ -688,20 +688,52 @@ def build_navigable_map(stations_gdf, incidents_gdf, sa_polys,
         clickControl.addTo(map_obj);
         """
 
-    legend_inner_html = (
-        '<b style="font-size:11.5px;color:#90cdf4">Map Legend</b><br><br>'
-        '<span style="color:#3b82f6">&#9679;</span>&ensp;Medical Station<br>'
-        '<span style="color:#ef4444">&#9650;</span>&ensp;Fire Station<br>'
-        '<span style="color:#3b82f6;opacity:.7">&#9679;</span>&ensp;Medical Incident<br>'
-        '<span style="color:#f59e0b;opacity:.7">&#9679;</span>&ensp;RTA Incident<br>'
-        '<span style="color:#ef4444;opacity:.7">&#9679;</span>&ensp;Fire Incident<br>'
-        '<hr style="border-color:rgba(255,255,255,0.1);margin:5px 0">'
-        '<span style="color:#4285f4">&#9472;&#9472;</span>&ensp;Leg 1: Dispatch → Scene<br>'
-        '<span style="color:#fb923c">&#9472;&#9472;</span>&ensp;Leg 2: Scene → Hospital<br>'
-        '<span style="color:#1d4ed8;opacity:.45">&#9632;</span>&ensp;Medical coverage<br>'
-        '<span style="color:#b91c1c;opacity:.45">&#9632;</span>&ensp;Fire coverage'
-    )
+    # ── Determine if TomTom traffic is active ─────────────────────────────
+    tomtom_active = bool(st.secrets.get("TOMTOM_API_KEY"))
 
+    # ── Build legend HTML (pure CSS-positioned, always visible) ──────────
+    traffic_row = (
+        '<span style="color:#00e5ff">━━</span>&ensp;Live Traffic Flow<br>'
+        if tomtom_active else ""
+    )
+    legend_html = f"""
+    <div id="map-legend-box" style="
+        position: absolute;
+        bottom: 30px;
+        left: 10px;
+        z-index: 9999;
+        background: rgba(6,18,38,0.93);
+        color: #e2e8f0;
+        padding: 11px 15px;
+        border-radius: 10px;
+        border: 1px solid rgba(255,255,255,0.12);
+        font-family: Inter, sans-serif;
+        font-size: 10.5px;
+        min-width: 182px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.45);
+        line-height: 1.75;
+        pointer-events: none;
+    ">
+        <b style="font-size:11.5px;color:#90cdf4;display:block;margin-bottom:4px;">🗺️ Map Legend</b>
+        <span style="color:#3b82f6">&#9679;</span>&ensp;Medical Station<br>
+        <span style="color:#ef4444">&#9650;</span>&ensp;Fire Station<br>
+        <span style="color:#3b82f6;opacity:.7">&#9679;</span>&ensp;Medical Incident<br>
+        <span style="color:#f59e0b;opacity:.7">&#9679;</span>&ensp;RTA Incident<br>
+        <span style="color:#ef4444;opacity:.7">&#9679;</span>&ensp;Fire Incident<br>
+        <hr style="border-color:rgba(255,255,255,0.12);margin:5px 0">
+        <span style="color:#4285f4">──</span>&ensp;Leg 1: Dispatch → Scene<br>
+        <span style="color:#fb923c">──</span>&ensp;Leg 2: Scene → Hospital<br>
+        <hr style="border-color:rgba(255,255,255,0.12);margin:5px 0">
+        <span style="color:#1d4ed8;opacity:.7">&#9632;</span>&ensp;Medical coverage zone<br>
+        <span style="color:#b91c1c;opacity:.7">&#9632;</span>&ensp;Fire coverage zone<br>
+        {traffic_row}<hr style="border-color:rgba(255,255,255,0.12);margin:5px 0">
+        <span style="color:#f59e0b">🚑</span>&ensp;Ambulance (vehicle)<br>
+        <span style="color:#a7f3d0">⚡</span>&ensp;Active incident point
+    </div>
+    """
+    m.get_root().html.add_child(folium.Element(legend_html))
+
+    # ── JS-only block: compass + click helper (no legend here) ────────────
     custom_js = f"""
     <script>
     (function() {{
@@ -710,9 +742,8 @@ def build_navigable_map(stations_gdf, incidents_gdf, sa_polys,
             var map_obj = window[map_id];
             if (map_obj) {{
                 clearInterval(interval);
-                
                 try {{
-                    // 🧭 Compass / Orient button Control Class
+                    // 🧭 Compass / Orient button
                     var CompassControlClass = L.Control.extend({{
                         options: {{ position: 'topright' }},
                         onAdd: function(map) {{
@@ -730,41 +761,17 @@ def build_navigable_map(stations_gdf, incidents_gdf, sa_polys,
                             div.style.cursor = 'pointer';
                             div.title = "Vehicle Heading: {bearing:.0f}° {card_dir}";
                             div.innerHTML = `<div style="transform:rotate({bearing:.1f}deg);font-size:19px;line-height:1;transition:transform 0.4s ease;">🧭</div>`;
-                            
                             L.DomEvent.disableClickPropagation(div);
                             L.DomEvent.disableScrollPropagation(div);
                             return div;
                         }}
                     }});
                     map_obj.addControl(new CompassControlClass());
-                    
-                    // 📊 Map Legend Control Class
-                    var LegendControlClass = L.Control.extend({{
-                        options: {{ position: 'bottomleft' }},
-                        onAdd: function(map) {{
-                            var div = L.DomUtil.create('div', 'legend-control leaflet-control');
-                            div.style.background = 'rgba(6,18,38,0.93)';
-                            div.style.color = '#e2e8f0';
-                            div.style.padding = '10px 14px';
-                            div.style.borderRadius = '10px';
-                            div.style.border = '1px solid rgba(255,255,255,0.1)';
-                            div.style.fontFamily = 'Inter, sans-serif';
-                            div.style.fontSize = '10.5px';
-                            div.style.minWidth = '175px';
-                            div.style.boxShadow = '0 4px 12px rgba(0,0,0,0.35)';
-                            div.innerHTML = `{legend_inner_html}`;
-                            
-                            L.DomEvent.disableClickPropagation(div);
-                            L.DomEvent.disableScrollPropagation(div);
-                            return div;
-                        }}
-                    }});
-                    map_obj.addControl(new LegendControlClass());
-                    
+
                     // 🖱️ Click Helper
                     {click_setup_js}
                 }} catch (e) {{
-                    console.error("Leaflet overlays error:", e);
+                    console.error("Leaflet overlay error:", e);
                 }}
             }}
         }}, 100);
@@ -774,6 +781,7 @@ def build_navigable_map(stations_gdf, incidents_gdf, sa_polys,
     m.get_root().html.add_child(folium.Element(custom_js))
     folium.LayerControl(collapsed=True, position="topright").add_to(m)
     return m
+
 
 
 def add_dynamic_markers(m, incident_ll, vehicle_ll, bearing, dest_ll=None):
