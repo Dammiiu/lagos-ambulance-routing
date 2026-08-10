@@ -675,7 +675,7 @@ def build_navigable_map(stations_gdf, incidents_gdf, sa_polys,
         click_setup_js = f"""
         var clickControl = L.control({{ position: 'topleft' }});
         clickControl.onAdd = function(map) {{
-            var div = L.DomUtil.create('div', 'click-helper-control');
+            var div = L.DomUtil.create('div', 'click-helper-control leaflet-control');
             div.innerHTML = `<div style="position:absolute;top:4px;left:50vw;transform:translateX(-50%);
                                         z-index:9999;background:rgba(6,18,38,0.92);color:#a7f3d0;
                                         padding:8px 16px;border-radius:20px;font-family:Inter,sans-serif;
@@ -711,34 +711,34 @@ def build_navigable_map(stations_gdf, incidents_gdf, sa_polys,
             if (map_obj) {{
                 clearInterval(interval);
                 
-                // 🧭 Compass / Orient button Control (Top Right)
-                var compassControl = L.control({{ position: 'topright' }});
-                compassControl.onAdd = function(map) {{
-                    var div = L.DomUtil.create('div', 'compass-control');
-                    div.style.background = 'rgba(6,18,38,0.92)';
-                    div.style.color = '#e2e8f0';
-                    div.style.width = '34px';
-                    div.style.height = '34px';
-                    div.style.borderRadius = '50%';
-                    div.style.border = '1px solid rgba(255,255,255,0.18)';
-                    div.style.boxShadow = '0 3px 8px rgba(0,0,0,0.5)';
-                    div.style.display = 'flex';
-                    div.style.alignItems = 'center';
-                    div.style.justifyContent = 'center';
-                    div.style.cursor = 'pointer';
-                    div.title = "Vehicle Heading: {bearing:.0f}° {card_dir}";
-                    div.innerHTML = `<div style="transform:rotate({bearing:.1f}deg);font-size:19px;line-height:1;transition:transform 0.4s ease;">🧭</div>`;
-                    
-                    L.DomEvent.disableClickPropagation(div);
-                    L.DomEvent.disableScrollPropagation(div);
-                    return div;
-                }};
-                compassControl.addTo(map_obj);
-                
-                // 📊 Map Legend Control (Bottom Left)
-                var legendControl = L.control({{ position: 'bottomleft' }});
-                legendControl.onAdd = function(map) {{
-                    var div = L.DomUtil.create('div', 'legend-control');
+                 // 🧭 Compass / Orient button Control (Top Right)
+                 var compassControl = L.control({{ position: 'topright' }});
+                 compassControl.onAdd = function(map) {{
+                     var div = L.DomUtil.create('div', 'compass-control leaflet-control');
+                     div.style.background = 'rgba(6,18,38,0.92)';
+                     div.style.color = '#e2e8f0';
+                     div.style.width = '34px';
+                     div.style.height = '34px';
+                     div.style.borderRadius = '50%';
+                     div.style.border = '1px solid rgba(255,255,255,0.18)';
+                     div.style.boxShadow = '0 3px 8px rgba(0,0,0,0.5)';
+                     div.style.display = 'flex';
+                     div.style.alignItems = 'center';
+                     div.style.justifyContent = 'center';
+                     div.style.cursor = 'pointer';
+                     div.title = "Vehicle Heading: {bearing:.0f}° {card_dir}";
+                     div.innerHTML = `<div style="transform:rotate({bearing:.1f}deg);font-size:19px;line-height:1;transition:transform 0.4s ease;">🧭</div>`;
+                     
+                     L.DomEvent.disableClickPropagation(div);
+                     L.DomEvent.disableScrollPropagation(div);
+                     return div;
+                 }};
+                 compassControl.addTo(map_obj);
+                 
+                 // 📊 Map Legend Control (Bottom Left)
+                 var legendControl = L.control({{ position: 'bottomleft' }});
+                 legendControl.onAdd = function(map) {{
+                     var div = L.DomUtil.create('div', 'legend-control leaflet-control');
                     div.style.background = 'rgba(6,18,38,0.93)';
                     div.style.color = '#e2e8f0';
                     div.style.padding = '10px 14px';
