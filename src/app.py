@@ -241,6 +241,52 @@ html, body, [data-testid="stAppViewContainer"] { font-family: 'Inter', sans-seri
     backdrop-filter: blur(10px);
 }
 
+/* ── Sidebar stats cards ── */
+.stat-group {
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.stat-header {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 10px;
+}
+.stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    font-size: 0.8rem;
+}
+.bar-container {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+    height: 6px;
+    overflow: hidden;
+    width: 100%;
+    margin-top: 4px;
+    margin-bottom: 12px;
+}
+.med-bar {
+    background: #3b82f6;
+    height: 100%;
+}
+.fire-bar {
+    background: #ef4444;
+    height: 100%;
+}
+.badge-value {
+    font-weight: 700;
+    color: #f8fafc;
+}
+
 /* ── Mobile & Responsive Design (consolidated) ── */
 @media (max-width: 768px) {
     .main .block-container { padding: 0.4rem 0.3rem; }
@@ -1429,54 +1475,8 @@ def main():
         med_15_pct = 100*med_15/total_nodes
         fire_15_pct = 100*fire_15/total_nodes
 
-        st.markdown(f"""
-        <style>
-        .stat-group {{
-            background: rgba(15, 23, 42, 0.6);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            border-radius: 12px;
-            padding: 14px;
-            margin-bottom: 12px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        }}
-        .stat-header {{
-            font-size: 0.75rem;
-            color: #94a3b8;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-bottom: 10px;
-        }}
-        .stat-row {{
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 8px;
-            font-size: 0.8rem;
-        }}
-        .bar-container {{
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 4px;
-            height: 6px;
-            overflow: hidden;
-            width: 100%;
-            margin-top: 4px;
-            margin-bottom: 12px;
-        }}
-        .med-bar {{
-            background: #3b82f6;
-            height: 100%;
-        }}
-        .fire-bar {{
-            background: #ef4444;
-            height: 100%;
-        }}
-        .badge-value {{
-            font-weight: 700;
-            color: #f8fafc;
-        }}
-        </style>
-        
+        import textwrap
+        stats_html = textwrap.dedent(f"""
         <div class="stat-group">
             <div class="stat-header">📊 System Overview</div>
             <div class="stat-row">
@@ -1524,7 +1524,8 @@ def main():
             </div>
             <div class="bar-container"><div class="fire-bar" style="width: {fire_10_pct}%"></div></div>
         </div>
-        """, unsafe_allow_html=True)
+        """)
+        st.markdown(stats_html, unsafe_allow_html=True)
     
     # ── Emergency Dispatch Panel (Main Screen Top, Easily Accessible) ──
     st.markdown("### 🚑 Emergency Dispatch Panel")
