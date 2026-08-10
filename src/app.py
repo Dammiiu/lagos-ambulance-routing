@@ -63,6 +63,7 @@ from datetime import datetime
 import folium
 from folium import plugins
 from streamlit_folium import st_folium
+from branca.element import Template, MacroElement
 from streamlit_autorefresh import st_autorefresh
 import pydeck as pdk
 
@@ -575,6 +576,25 @@ TILE_OPTIONS = {
 }
 
 
+class LeafletCustomControl(MacroElement):
+    def __init__(self, html_content, position="bottomleft"):
+        super(LeafletCustomControl, self).__init__()
+        self.html_content = html_content
+        self.position = position
+        self._template = Template("""
+            {% macro script(value, metadata) %}
+            var custom_control = L.control({position: '{{value.position}}'});
+            custom_control.onAdd = function (map) {
+                var div = L.DomUtil.create('div', 'custom-map-control');
+                div.style.pointerEvents = 'auto';
+                div.innerHTML = `{{value.html_content}}`;
+                return div;
+            };
+            custom_control.addTo({{this._parent.get_name()}});
+            {% endmacro %}
+        """)
+
+
 def build_navigable_map(stations_gdf, incidents_gdf, sa_polys,
                         show_cov, cov_t, tile_name,
                         incident_ll=None, vehicle_ll=None,
@@ -670,35 +690,34 @@ def build_navigable_map(stations_gdf, incidents_gdf, sa_polys,
     if click_mode:
         label = "incident location" if click_mode == "incident" else "vehicle position"
         click_html = (
-            f'<div style="position:fixed;top:14px;left:50%;transform:translateX(-50%);'
+            f'<div style="position:absolute;top:14px;left:50%;transform:translateX(-50%);'
             f'z-index:9999;background:rgba(6,18,38,0.92);color:#a7f3d0;'
             f'padding:8px 16px;border-radius:20px;font-family:Inter,sans-serif;'
             f'font-size:12px;font-weight:600;border:1px solid rgba(52,211,153,0.3);'
-            f'box-shadow:0 4px 16px rgba(0,0,0,0.5);pointer-events:none">'
+            f'box-shadow:0 4px 16px rgba(0,0,0,0.5);pointer-events:none;white-space:nowrap;">'
             f'🖱️ Click anywhere on the map to set the {label}</div>'
         )
-        m.get_root().html.add_child(folium.Element(click_html))
+        LeafletCustomControl(click_html, position="topleft").add_to(m)
 
     compass_html = f"""
-    <div style="position:absolute;top:10px;right:50px;z-index:9999;
-                background:rgba(6,18,38,0.92);color:#e2e8f0;
+    <div style="background:rgba(6,18,38,0.92);color:#e2e8f0;
                 width:34px;height:34px;border-radius:50%;
                 border:1px solid rgba(255,255,255,0.18);
                 box-shadow:0 3px 8px rgba(0,0,0,0.5);
                 display:flex;align-items:center;justify-content:center;
-                pointer-events:auto;"
+                cursor:pointer;"
           title="Vehicle Heading: {bearing:.0f}° {card_dir}">
       <div style="transform:rotate({bearing:.1f}deg);font-size:19px;line-height:1;
                   transition:transform 0.4s cubic-bezier(0.4,0,0.2,1);">🧭</div>
     </div>"""
-    m.get_root().html.add_child(folium.Element(compass_html))
+    LeafletCustomControl(compass_html, position="topright").add_to(m)
 
     legend = """
-    <div style="position:absolute;top:10px;left:50px;z-index:9999;
-                background:rgba(6,18,38,0.93);color:#e2e8f0;
+    <div style="background:rgba(6,18,38,0.93);color:#e2e8f0;
                 padding:10px 14px;border-radius:10px;
                 border:1px solid rgba(255,255,255,0.1);
-                font-family:Inter,sans-serif;font-size:10.5px;min-width:175px;">
+                font-family:Inter,sans-serif;font-size:10.5px;min-width:175px;
+                box-shadow:0 4px 12px rgba(0,0,0,0.35);">
       <b style="font-size:11.5px;color:#90cdf4">Map Legend</b><br><br>
       <span style="color:#3b82f6">&#9679;</span>&ensp;Medical Station<br>
       <span style="color:#ef4444">&#9650;</span>&ensp;Fire Station<br>
@@ -711,7 +730,7 @@ def build_navigable_map(stations_gdf, incidents_gdf, sa_polys,
       <span style="color:#1d4ed8;opacity:.45">&#9632;</span>&ensp;Medical coverage<br>
       <span style="color:#b91c1c;opacity:.45">&#9632;</span>&ensp;Fire coverage
     </div>"""
-    m.get_root().html.add_child(folium.Element(legend))
+    LeafletCustomControl(legend, position="bottomleft").add_to(m)
     folium.LayerControl(collapsed=True, position="topright").add_to(m)
     return m
 
