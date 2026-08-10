@@ -968,7 +968,9 @@ def build_3d_pydeck_chart(
         station_sign_data.append({
             "position": [lon, lat, 35],
             "text": f"{symbol} {srow['name']}",
-            "color": [255, 255, 255, 255]
+            "color": [255, 255, 255, 255],
+            "name": srow["name"],
+            "type": f"{ftype.title()} Station"
         })
 
     layers.append(pdk.Layer(
@@ -1009,7 +1011,9 @@ def build_3d_pydeck_chart(
         inc_sign_data.append({
             "position": [lon, lat, 22],
             "text": symbol,
-            "color": [255, 255, 255, 255]
+            "color": [255, 255, 255, 255],
+            "name": f"Incident #{i}",
+            "type": f"{itype} Incident"
         })
                           
     layers.append(pdk.Layer(
@@ -1080,14 +1084,14 @@ def build_3d_pydeck_chart(
                 if len(remaining_leg1) >= 2:
                     layers.append(pdk.Layer(
                         "PathLayer",
-                        data=pd.DataFrame([{"path": [[lon, lat, 15] for lat, lon in remaining_leg1], "name": "Remaining Leg 1"}]),
+                        data=pd.DataFrame([{"path": [[lon, lat, 15] for lat, lon in remaining_leg1], "name": "Remaining Leg 1", "type": "Active Route"}]),
                         get_path="path", get_color=[66, 133, 244, 255], get_width=12,
                         width_min_pixels=6, pickable=True,
                     ))
                 if len(remaining_leg2) >= 2:
                     layers.append(pdk.Layer(
                         "PathLayer",
-                        data=pd.DataFrame([{"path": [[lon, lat, 25] for lat, lon in remaining_leg2], "name": "Remaining Leg 2"}]),
+                        data=pd.DataFrame([{"path": [[lon, lat, 25] for lat, lon in remaining_leg2], "name": "Remaining Leg 2", "type": "Active Route"}]),
                         get_path="path", get_color=[251, 146, 60, 255], get_width=12,
                         width_min_pixels=6, pickable=True,
                     ))
@@ -1095,14 +1099,14 @@ def build_3d_pydeck_chart(
                 if len(leg1_ll) >= 2:
                     layers.append(pdk.Layer(
                         "PathLayer",
-                        data=pd.DataFrame([{"path": [[lon, lat, 15] for lat, lon in leg1_ll], "name": f"Leg 1: {result['leg1_time_min']:.2f} min"}]),
+                        data=pd.DataFrame([{"path": [[lon, lat, 15] for lat, lon in leg1_ll], "name": f"Leg 1: {result['leg1_time_min']:.2f} min", "type": "Planned Route"}]),
                         get_path="path", get_color=[66,133,244,230], get_width=10,
                         width_min_pixels=5, pickable=True,
                     ))
                 if leg2_ll and len(leg2_ll) >= 2:
                     layers.append(pdk.Layer(
                         "PathLayer",
-                        data=pd.DataFrame([{"path": [[lon, lat, 25] for lat, lon in leg2_ll], "name": f"Leg 2: {result['leg2_time_min']:.2f} min"}]),
+                        data=pd.DataFrame([{"path": [[lon, lat, 25] for lat, lon in leg2_ll], "name": f"Leg 2: {result['leg2_time_min']:.2f} min", "type": "Planned Route"}]),
                         get_path="path", get_color=[251,146,60,230], get_width=10,
                         width_min_pixels=5, pickable=True,
                     ))
