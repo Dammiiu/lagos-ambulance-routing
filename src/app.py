@@ -1341,9 +1341,29 @@ def main():
                     st.session_state["clicked_veh_lon"] = clon
 
     # ── Auto-refresh tick — sim tracking OR live nav ───────────────────────────
-    if st.session_state["sim_tracking"] and not st.session_state["live_nav_mode"]:
-        st_autorefresh(interval=3000, key="nav_autorefresh_tick")
-        next_prog = min(1.0, st.session_state["sim_progress"] + 0.04)
+    if st.session_state["sim_tracking"] and not st.session_state["live_nav_mode"] and st.session_state.get("result"):
+        # Refresh every 1000ms for buttery-smooth vehicle tracking on the map
+        st_autorefresh(interval=1000, key="nav_autorefresh_tick")
+        import time
+        now = time.time()
+        if "sim_last_update" not in st.session_state:
+            st.session_state["sim_last_update"] = now
+            
+        dt = now - st.session_state["sim_last_update"]
+        st.session_state["sim_last_update"] = now
+        
+        # Avoid huge jumps if the browser slept or paused
+        if dt > 3.0:
+            dt = 1.0
+            
+        total_time_min = st.session_state["result"].get("total_time_min", 5.0)
+        total_duration_sec = max(total_time_min * 60.0, 1.0)
+        
+        # 30x simulation speed multiplier (10 min route takes 20s)
+        sim_speed_multiplier = 30.0
+        prog_increment = (dt / total_duration_sec) * sim_speed_multiplier
+        
+        next_prog = min(1.0, st.session_state["sim_progress"] + prog_increment)
         st.session_state["sim_progress"] = next_prog
         if next_prog >= 1.0:
             st.session_state["sim_tracking"] = False
@@ -1725,7 +1745,7 @@ def main():
                 
                 # --- LIVE TRAFFIC EXTERNAL ROUTING ---
                 tomtom_key = st.secrets.get("TOMTOM_API_KEY")
-                if tomtom_key and result:
+                if tomtom_key and result and not used_wrong_way:
                     try:
                         # Leg 1
                         sg = result.get("leg1_station_geom")
@@ -1986,9 +2006,7 @@ def main():
                         st.rerun()
 
                     # ── On each autorefresh: read GPS and update progress ────
-                    camera_follow = st.session_state.get("camera_follow", True)
-                    if camera_follow:
-                        live_lat = st.session_state.get("geo_lat")
+                    live_lat = st.session_state.get("geo_lat")
                     live_lon = st.session_state.get("geo_lon")
 
                     if live_lat and live_lon:
@@ -2352,12 +2370,17 @@ def main():
                 with c_btn1:
                     if st.button(trk_label, use_container_width=True, type="primary" if not is_trk else "secondary", key="map_ctrl_trk"):
                         st.session_state["sim_tracking"] = not is_trk
+                        if not is_trk:
+                            import time
+                            st.session_state["sim_last_update"] = time.time()
                         st.rerun()
                 with c_btn2:
                     if st.button("↺ Reset", use_container_width=True, key="map_ctrl_rst"):
                         st.session_state["sim_progress"] = 0.0
                         st.session_state["sim_tracking"] = False
                         st.session_state["last_spoken_step"] = None
+                        if "sim_last_update" in st.session_state:
+                            del st.session_state["sim_last_update"]
                         st.rerun()
                 with c_btn3:
                     if st.button("🎯 Recenter", use_container_width=True, key="map_ctrl_rcnt"):
@@ -2416,13 +2439,14 @@ def main():
 
                 # Slider (Part B Fix: Accurate percentage sync mapping)
                 # We do NOT use 'key' here so that we can programmatically update the slider's value via the background task.
+                current_prog = st.session_state.get("sim_progress", 0.0)
                 prog_val_ui = st.slider("Vehicle Route Progress", 0, 100,
-                                        value=int(st.session_state.get("sim_progress", 0.0) * 100),
+                                        value=int(current_prog * 100),
                                         step=1, format="%d%%")
                 
-                # If the user drags the slider, prog_val_ui changes, and we write it back to sim_progress.
-                # If the background loop changes sim_progress, the slider's value argument reflects it.
-                st.session_state["sim_progress"] = prog_val_ui / 100.0
+                # Only update session state if the user manually dragged the slider (i.e. slider value differs from current percent)
+                if prog_val_ui != int(current_prog * 100):
+                    st.session_state["sim_progress"] = prog_val_ui / 100.0
                 prog_val = st.session_state["sim_progress"]
                 # Speak direction if voice enabled
                 if voice_on and all_dirs:
