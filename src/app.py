@@ -606,6 +606,7 @@ def build_navigable_map(stations_gdf, incidents_gdf, sa_polys,
 
     plugins.Fullscreen(position="topright", title="Fullscreen", force_separate_button=True).add_to(m)
     plugins.MeasureControl(position="bottomright", primary_length_unit="meters").add_to(m)
+    plugins.Geocoder(position="topleft").add_to(m)
 
     # Coverage zones
     if show_cov and cov_t in sa_polys:
@@ -679,19 +680,16 @@ def build_navigable_map(stations_gdf, incidents_gdf, sa_polys,
         m.get_root().html.add_child(folium.Element(click_html))
 
     compass_html = f"""
-    <div style="position:absolute;top:10px;right:10px;z-index:9999;
+    <div style="position:absolute;top:10px;right:50px;z-index:9999;
                 background:rgba(6,18,38,0.92);color:#e2e8f0;
-                padding:7px 12px;border-radius:10px;
-                border:1px solid rgba(255,255,255,0.14);
-                font-family:Inter,sans-serif;font-size:11.5px;
-                box-shadow:0 4px 14px rgba(0,0,0,0.5);
-                display:flex;align-items:center;gap:9px;pointer-events:none;">
-      <div style="transform:rotate({bearing:.1f}deg);font-size:18px;display:inline-block;
-                  transition:transform 0.4s cubic-bezier(0.4,0,0.2,1);line-height:1;">🧭</div>
-      <div>
-        <b style="color:#90cdf4">{bearing:.0f}° {card_dir}</b><br>
-        <span style="font-size:9.5px;color:#94a3b8;letter-spacing:.04em">BEARING</span>
-      </div>
+                width:34px;height:34px;border-radius:50%;
+                border:1px solid rgba(255,255,255,0.18);
+                box-shadow:0 3px 8px rgba(0,0,0,0.5);
+                display:flex;align-items:center;justify-content:center;
+                pointer-events:auto;"
+          title="Vehicle Heading: {bearing:.0f}° {card_dir}">
+      <div style="transform:rotate({bearing:.1f}deg);font-size:19px;line-height:1;
+                  transition:transform 0.4s cubic-bezier(0.4,0,0.2,1);">🧭</div>
     </div>"""
     m.get_root().html.add_child(folium.Element(compass_html))
 
@@ -1365,7 +1363,7 @@ def main():
         <p>Dijkstra Network Routing · Two-Leg Dispatch · Turn-by-Turn Navigation · 3D Visualization · Lagos State, Nigeria</p>
       </div>
       <div class="uni">
-        <span style="color: #94a3b8; font-weight: 500;">Candidate:</span> <strong style="color: #fff;">Makanjuola, Thomas Oluwadamilare</strong><br>
+        <strong style="color: #fff;">Makanjuola, Thomas Oluwadamilare</strong><br>
         <span style="color: #94a3b8; font-weight: 500;">Matric No:</span> <strong style="color: #38bdf8;">125/21/1/0180</strong><br>
         <span style="color: #60a5fa; font-weight: 600;">Abiola Ajimobi Technical University, Ibadan</span>
       </div>
@@ -1525,112 +1523,6 @@ def main():
     with st.container():
         st.markdown("<div class='dispatch-box'>", unsafe_allow_html=True)
         
-        # 🔍 Search & Pin Address on Map
-        search_query = st_keyup("🔍 Search Address or Place in Lagos (e.g. Yaba, Ikeja, Lekki):", key="loc_search_query", debounce=500)
-        
-        if search_query and len(search_query.strip()) >= 2:
-            sq_lower = search_query.strip().lower()
-            # Fast local dictionary lookup
-            local_matches = []
-            for k, v in LAGOS_AREAS.items():
-                if sq_lower in k.lower():
-                    local_matches.append({
-                        "place_id": f"local_{k.replace(' ', '')}",
-                        "display_name": v["display_name"],
-                        "lat": v["lat"],
-                        "lon": v["lon"]
-                    })
-            
-            # If not enough local matches, query Nominatim (cached via session state)
-            nominatim_results = []
-            if len(sq_lower) >= 4:
-                cache_key = f"nominatim_{sq_lower}"
-                if cache_key not in st.session_state:
-                    with st.spinner("Searching OSM map..."):
-                        st.session_state[cache_key] = geocode_lagos(search_query)
-                nominatim_results = st.session_state[cache_key] or []
-            
-            # Combine
-            all_matches = local_matches + [
-                {
-                    "place_id": f"osm_{r['place_id']}",
-                    "display_name": r["display_name"],
-                    "lat": float(r["lat"]),
-                    "lon": float(r["lon"])
-                }
-                for r in nominatim_results
-            ]
-            
-            # Unique by display_name
-            seen = set()
-            unique_matches = []
-            for m in all_matches:
-                if m["display_name"] not in seen:
-                    seen.add(m["display_name"])
-                    unique_matches.append(m)
-            
-            # Render Matches
-            if unique_matches:
-                st.markdown("<div style='margin-bottom:8px; color:#94a3b8; font-size:0.8rem;'>Suggestions (Click to pin on map):</div>", unsafe_allow_html=True)
-                cols = st.columns(min(len(unique_matches), 4))
-                for i, r in enumerate(unique_matches[:4]):
-                    dname = r['display_name'].split(",")[0]
-                    cx, cy = ll_to_utm(float(r["lat"]), float(r["lon"]))
-                    _, snap_dist = snap_point_to_node(nodes_gdf, Point(cx, cy))
-                    in_study = snap_dist < 6000
-                    
-                    if in_study:
-                        if cols[i].button(f"📍 {dname}", key=f"search_set_{r['place_id']}", use_container_width=True):
-                            st.session_state["map_clicked_lat"] = float(r["lat"])
-                            st.session_state["map_clicked_lon"] = float(r["lon"])
-                            st.session_state["loc_search_query"] = "" # Clear search
-                            st.rerun()
-                    else:
-                        cols[i].button(f"❌ {dname} (Out of Bounds)", key=f"search_set_{r['place_id']}", use_container_width=True, disabled=True, help="This location is outside our study area in Lagos.")
-            else:
-                st.info("No matching locations found in Lagos.")
-        
-        # 📍 Map Click / Search Pinning Prompt
-        if st.session_state.get("map_clicked_lat") and st.session_state.get("map_clicked_lon"):
-            mlat = st.session_state["map_clicked_lat"]
-            mlon = st.session_state["map_clicked_lon"]
-            st.markdown(f"""
-            <div style="background: rgba(30, 58, 138, 0.95); padding: 12px 18px; border-radius: 10px; border: 1.5px solid #3b82f6; margin-bottom: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
-                <div style="color: #93c5fd; font-weight: 700; font-size: 0.85rem; margin-bottom: 2px;">
-                    📍 Selected Location: <b>{mlat:.5f}°N, {mlon:.5f}°E</b>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            cb1, cb2, cb3, cb4 = st.columns(4)
-            if cb1.button("🚨 Set as Incident", key="btn_set_inc", use_container_width=True, type="primary"):
-                st.session_state["clicked_inc_lat"] = mlat
-                st.session_state["clicked_inc_lon"] = mlon
-                st.session_state["inc_mode_sel"] = "Click on map"
-                st.session_state["map_clicked_lat"] = None
-                st.session_state["map_clicked_lon"] = None
-                st.rerun()
-            if cb2.button("🚑 Set as Vehicle Start", key="btn_set_veh", use_container_width=True, type="primary"):
-                st.session_state["clicked_veh_lat"] = mlat
-                st.session_state["clicked_veh_lon"] = mlon
-                st.session_state["veh_mode_sel"] = "Click on map"
-                st.session_state["map_clicked_lat"] = None
-                st.session_state["map_clicked_lon"] = None
-                st.rerun()
-            if cb3.button("🏥 Set as Custom Destination", key="btn_set_dest", use_container_width=True, type="primary"):
-                st.session_state["clicked_dest_lat"] = mlat
-                st.session_state["clicked_dest_lon"] = mlon
-                dx, dy = ll_to_utm(mlat, mlon)
-                dest_node, _ = snap_point_to_node(nodes_gdf, Point(dx, dy))
-                st.session_state["custom_dest_node"] = dest_node
-                st.session_state["map_clicked_lat"] = None
-                st.session_state["map_clicked_lon"] = None
-                st.rerun()
-            if cb4.button("❌ Dismiss / Clear Pins", key="btn_dismiss_click", use_container_width=True):
-                st.session_state["map_clicked_lat"] = None
-                st.session_state["map_clicked_lon"] = None
-                st.rerun()
-
-        st.markdown("<hr style='border-color: rgba(255,255,255,0.08); margin-top: 5px; margin-bottom: 15px;'>", unsafe_allow_html=True)
         col1, col2, col3 = st.columns([1, 1, 1], gap="medium")
         with col1:
             st.markdown("#### 🚨 Incident Location")
@@ -2657,6 +2549,111 @@ def main():
                             }}
                             </script>""", height=0, width=0)
                 st.markdown("</div>", unsafe_allow_html=True)
+
+        # 🔍 Search & Pin Address on Map (Moved to map column top)
+        search_query = st_keyup("🔍 Search Address or Place in Lagos (e.g. Yaba, Ikeja, Lekki):", key="loc_search_query", debounce=500)
+        
+        if search_query and len(search_query.strip()) >= 2:
+            sq_lower = search_query.strip().lower()
+            # Fast local dictionary lookup
+            local_matches = []
+            for k, v in LAGOS_AREAS.items():
+                if sq_lower in k.lower():
+                    local_matches.append({
+                        "place_id": f"local_{k.replace(' ', '')}",
+                        "display_name": v["display_name"],
+                        "lat": v["lat"],
+                        "lon": v["lon"]
+                    })
+            
+            # If not enough local matches, query Nominatim (cached via session state)
+            nominatim_results = []
+            if len(sq_lower) >= 4:
+                cache_key = f"nominatim_{sq_lower}"
+                if cache_key not in st.session_state:
+                    with st.spinner("Searching OSM map..."):
+                        st.session_state[cache_key] = geocode_lagos(search_query)
+                nominatim_results = st.session_state[cache_key] or []
+            
+            # Combine
+            all_matches = local_matches + [
+                {
+                    "place_id": f"osm_{r['place_id']}",
+                    "display_name": r["display_name"],
+                    "lat": float(r["lat"]),
+                    "lon": float(r["lon"])
+                }
+                for r in nominatim_results
+            ]
+            
+            # Unique by display_name
+            seen = set()
+            unique_matches = []
+            for m in all_matches:
+                if m["display_name"] not in seen:
+                    seen.add(m["display_name"])
+                    unique_matches.append(m)
+            
+            # Render Matches
+            if unique_matches:
+                st.markdown("<div style='margin-bottom:8px; color:#94a3b8; font-size:0.8rem;'>Suggestions (Click to pin on map):</div>", unsafe_allow_html=True)
+                cols = st.columns(min(len(unique_matches), 4))
+                for i, r in enumerate(unique_matches[:4]):
+                    dname = r['display_name'].split(",")[0]
+                    cx, cy = ll_to_utm(float(r["lat"]), float(r["lon"]))
+                    _, snap_dist = snap_point_to_node(nodes_gdf, Point(cx, cy))
+                    in_study = snap_dist < 6000
+                    
+                    if in_study:
+                        if cols[i].button(f"📍 {dname}", key=f"search_set_{r['place_id']}", use_container_width=True):
+                            st.session_state["map_clicked_lat"] = float(r["lat"])
+                            st.session_state["map_clicked_lon"] = float(r["lon"])
+                            st.session_state["loc_search_query"] = "" # Clear search
+                            st.rerun()
+                    else:
+                        cols[i].button(f"❌ {dname} (Out of Bounds)", key=f"search_set_{r['place_id']}", use_container_width=True, disabled=True, help="This location is outside our study area in Lagos.")
+            else:
+                st.info("No matching locations found in Lagos.")
+        
+        # 📍 Map Click / Search Pinning Prompt
+        if st.session_state.get("map_clicked_lat") and st.session_state.get("map_clicked_lon"):
+            mlat = st.session_state["map_clicked_lat"]
+            mlon = st.session_state["map_clicked_lon"]
+            st.markdown(f"""
+            <div style="background: rgba(30, 58, 138, 0.95); padding: 12px 18px; border-radius: 10px; border: 1.5px solid #3b82f6; margin-bottom: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
+                <div style="color: #93c5fd; font-weight: 700; font-size: 0.85rem; margin-bottom: 2px;">
+                    📍 Selected Location: <b>{mlat:.5f}°N, {mlon:.5f}°E</b>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            cb1, cb2, cb3, cb4 = st.columns(4)
+            if cb1.button("🚨 Set as Incident", key="btn_set_inc", use_container_width=True, type="primary"):
+                st.session_state["clicked_inc_lat"] = mlat
+                st.session_state["clicked_inc_lon"] = mlon
+                st.session_state["inc_mode_sel"] = "Click on map"
+                st.session_state["map_clicked_lat"] = None
+                st.session_state["map_clicked_lon"] = None
+                st.rerun()
+            if cb2.button("🚑 Set as Vehicle Start", key="btn_set_veh", use_container_width=True, type="primary"):
+                st.session_state["clicked_veh_lat"] = mlat
+                st.session_state["clicked_veh_lon"] = mlon
+                st.session_state["veh_mode_sel"] = "Click on map"
+                st.session_state["map_clicked_lat"] = None
+                st.session_state["map_clicked_lon"] = None
+                st.rerun()
+            if cb3.button("🏥 Set as Custom Destination", key="btn_set_dest", use_container_width=True, type="primary"):
+                st.session_state["clicked_dest_lat"] = mlat
+                st.session_state["clicked_dest_lon"] = mlon
+                dx, dy = ll_to_utm(mlat, mlon)
+                dest_node, _ = snap_point_to_node(nodes_gdf, Point(dx, dy))
+                st.session_state["custom_dest_node"] = dest_node
+                st.session_state["map_clicked_lat"] = None
+                st.session_state["map_clicked_lon"] = None
+                st.rerun()
+            if cb4.button("❌ Dismiss / Clear Pins", key="btn_dismiss_click", use_container_width=True):
+                st.session_state["map_clicked_lat"] = None
+                st.session_state["map_clicked_lon"] = None
+                st.rerun()
 
         map_tab1, map_tab2 = st.tabs(["🗺️ 2D Interactive Map (Folium)", "🌐 3D Perspective (Pydeck)"])
         
