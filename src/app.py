@@ -63,7 +63,6 @@ from datetime import datetime
 import folium
 from folium import plugins
 from streamlit_folium import st_folium
-from branca.element import Template, MacroElement
 from streamlit_autorefresh import st_autorefresh
 import pydeck as pdk
 
@@ -576,25 +575,6 @@ TILE_OPTIONS = {
 }
 
 
-class LeafletCustomControl(MacroElement):
-    def __init__(self, html_content, position="bottomleft"):
-        super(LeafletCustomControl, self).__init__()
-        self.html_content = html_content
-        self.position = position
-        self._template = Template("""
-            {% macro script(value, metadata) %}
-            var custom_control = L.control({position: '{{value.position}}'});
-            custom_control.onAdd = function (map) {
-                var div = L.DomUtil.create('div', 'custom-map-control');
-                div.style.pointerEvents = 'auto';
-                div.innerHTML = `{{value.html_content}}`;
-                return div;
-            };
-            custom_control.addTo({{this._parent.get_name()}});
-            {% endmacro %}
-        """)
-
-
 def build_navigable_map(stations_gdf, incidents_gdf, sa_polys,
                         show_cov, cov_t, tile_name,
                         incident_ll=None, vehicle_ll=None,
@@ -687,50 +667,103 @@ def build_navigable_map(stations_gdf, incidents_gdf, sa_polys,
             tooltip=f"#{i} — {itype}",
         ).add_to(inc_group)
 
+    map_var = m.get_name()
+    
+    click_setup_js = ""
     if click_mode:
         label = "incident location" if click_mode == "incident" else "vehicle position"
-        click_html = (
-            f'<div style="position:absolute;top:14px;left:50%;transform:translateX(-50%);'
-            f'z-index:9999;background:rgba(6,18,38,0.92);color:#a7f3d0;'
-            f'padding:8px 16px;border-radius:20px;font-family:Inter,sans-serif;'
-            f'font-size:12px;font-weight:600;border:1px solid rgba(52,211,153,0.3);'
-            f'box-shadow:0 4px 16px rgba(0,0,0,0.5);pointer-events:none;white-space:nowrap;">'
-            f'🖱️ Click anywhere on the map to set the {label}</div>'
-        )
-        LeafletCustomControl(click_html, position="topleft").add_to(m)
+        click_setup_js = f"""
+        var clickControl = L.control({{ position: 'topleft' }});
+        clickControl.onAdd = function(map) {{
+            var div = L.DomUtil.create('div', 'click-helper-control');
+            div.innerHTML = `<div style="position:absolute;top:4px;left:50vw;transform:translateX(-50%);
+                                        z-index:9999;background:rgba(6,18,38,0.92);color:#a7f3d0;
+                                        padding:8px 16px;border-radius:20px;font-family:Inter,sans-serif;
+                                        font-size:12px;font-weight:600;border:1px solid rgba(52,211,153,0.3);
+                                        box-shadow:0 4px 16px rgba(0,0,0,0.5);pointer-events:none;white-space:nowrap;">
+                                🖱️ Click anywhere on the map to set the {label}
+                             </div>`;
+            return div;
+        }};
+        clickControl.addTo(map_obj);
+        """
 
-    compass_html = f"""
-    <div style="background:rgba(6,18,38,0.92);color:#e2e8f0;
-                width:34px;height:34px;border-radius:50%;
-                border:1px solid rgba(255,255,255,0.18);
-                box-shadow:0 3px 8px rgba(0,0,0,0.5);
-                display:flex;align-items:center;justify-content:center;
-                cursor:pointer;"
-          title="Vehicle Heading: {bearing:.0f}° {card_dir}">
-      <div style="transform:rotate({bearing:.1f}deg);font-size:19px;line-height:1;
-                  transition:transform 0.4s cubic-bezier(0.4,0,0.2,1);">🧭</div>
-    </div>"""
-    LeafletCustomControl(compass_html, position="topright").add_to(m)
+    legend_inner_html = (
+        '<b style="font-size:11.5px;color:#90cdf4">Map Legend</b><br><br>'
+        '<span style="color:#3b82f6">&#9679;</span>&ensp;Medical Station<br>'
+        '<span style="color:#ef4444">&#9650;</span>&ensp;Fire Station<br>'
+        '<span style="color:#3b82f6;opacity:.7">&#9679;</span>&ensp;Medical Incident<br>'
+        '<span style="color:#f59e0b;opacity:.7">&#9679;</span>&ensp;RTA Incident<br>'
+        '<span style="color:#ef4444;opacity:.7">&#9679;</span>&ensp;Fire Incident<br>'
+        '<hr style="border-color:rgba(255,255,255,0.1);margin:5px 0">'
+        '<span style="color:#4285f4">&#9472;&#9472;</span>&ensp;Leg 1: Dispatch → Scene<br>'
+        '<span style="color:#fb923c">&#9472;&#9472;</span>&ensp;Leg 2: Scene → Hospital<br>'
+        '<span style="color:#1d4ed8;opacity:.45">&#9632;</span>&ensp;Medical coverage<br>'
+        '<span style="color:#b91c1c;opacity:.45">&#9632;</span>&ensp;Fire coverage'
+    )
 
-    legend = """
-    <div style="background:rgba(6,18,38,0.93);color:#e2e8f0;
-                padding:10px 14px;border-radius:10px;
-                border:1px solid rgba(255,255,255,0.1);
-                font-family:Inter,sans-serif;font-size:10.5px;min-width:175px;
-                box-shadow:0 4px 12px rgba(0,0,0,0.35);">
-      <b style="font-size:11.5px;color:#90cdf4">Map Legend</b><br><br>
-      <span style="color:#3b82f6">&#9679;</span>&ensp;Medical Station<br>
-      <span style="color:#ef4444">&#9650;</span>&ensp;Fire Station<br>
-      <span style="color:#3b82f6;opacity:.7">&#9679;</span>&ensp;Medical Incident<br>
-      <span style="color:#f59e0b;opacity:.7">&#9679;</span>&ensp;RTA Incident<br>
-      <span style="color:#ef4444;opacity:.7">&#9679;</span>&ensp;Fire Incident<br>
-      <hr style="border-color:rgba(255,255,255,0.1);margin:5px 0">
-      <span style="color:#4285f4">&#9472;&#9472;</span>&ensp;Leg 1: Dispatch → Scene<br>
-      <span style="color:#fb923c">&#9472;&#9472;</span>&ensp;Leg 2: Scene → Hospital<br>
-      <span style="color:#1d4ed8;opacity:.45">&#9632;</span>&ensp;Medical coverage<br>
-      <span style="color:#b91c1c;opacity:.45">&#9632;</span>&ensp;Fire coverage
-    </div>"""
-    LeafletCustomControl(legend, position="bottomleft").add_to(m)
+    custom_js = f"""
+    <script>
+    (function() {{
+        var map_id = "{map_var}";
+        var interval = setInterval(function() {{
+            var map_obj = window[map_id];
+            if (map_obj) {{
+                clearInterval(interval);
+                
+                // 🧭 Compass / Orient button Control (Top Right)
+                var compassControl = L.control({{ position: 'topright' }});
+                compassControl.onAdd = function(map) {{
+                    var div = L.DomUtil.create('div', 'compass-control');
+                    div.style.background = 'rgba(6,18,38,0.92)';
+                    div.style.color = '#e2e8f0';
+                    div.style.width = '34px';
+                    div.style.height = '34px';
+                    div.style.borderRadius = '50%';
+                    div.style.border = '1px solid rgba(255,255,255,0.18)';
+                    div.style.boxShadow = '0 3px 8px rgba(0,0,0,0.5)';
+                    div.style.display = 'flex';
+                    div.style.alignItems = 'center';
+                    div.style.justifyContent = 'center';
+                    div.style.cursor = 'pointer';
+                    div.title = "Vehicle Heading: {bearing:.0f}° {card_dir}";
+                    div.innerHTML = `<div style="transform:rotate({bearing:.1f}deg);font-size:19px;line-height:1;transition:transform 0.4s ease;">🧭</div>`;
+                    
+                    L.DomEvent.disableClickPropagation(div);
+                    L.DomEvent.disableScrollPropagation(div);
+                    return div;
+                }};
+                compassControl.addTo(map_obj);
+                
+                // 📊 Map Legend Control (Bottom Left)
+                var legendControl = L.control({{ position: 'bottomleft' }});
+                legendControl.onAdd = function(map) {{
+                    var div = L.DomUtil.create('div', 'legend-control');
+                    div.style.background = 'rgba(6,18,38,0.93)';
+                    div.style.color = '#e2e8f0';
+                    div.style.padding = '10px 14px';
+                    div.style.borderRadius = '10px';
+                    div.style.border = '1px solid rgba(255,255,255,0.1)';
+                    div.style.fontFamily = 'Inter, sans-serif';
+                    div.style.fontSize = '10.5px';
+                    div.style.minWidth = '175px';
+                    div.style.boxShadow = '0 4px 12px rgba(0,0,0,0.35)';
+                    div.innerHTML = `{legend_inner_html}`;
+                    
+                    L.DomEvent.disableClickPropagation(div);
+                    L.DomEvent.disableScrollPropagation(div);
+                    return div;
+                }};
+                legendControl.addTo(map_obj);
+                
+                // 🖱️ Click Helper
+                {click_setup_js}
+            }}
+        }}, 100);
+    }})();
+    </script>
+    """
+    m.get_root().html.add_child(folium.Element(custom_js))
     folium.LayerControl(collapsed=True, position="topright").add_to(m)
     return m
 
