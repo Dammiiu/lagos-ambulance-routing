@@ -711,53 +711,61 @@ def build_navigable_map(stations_gdf, incidents_gdf, sa_polys,
             if (map_obj) {{
                 clearInterval(interval);
                 
-                 // 🧭 Compass / Orient button Control (Top Right)
-                 var compassControl = L.control({{ position: 'topright' }});
-                 compassControl.onAdd = function(map) {{
-                     var div = L.DomUtil.create('div', 'compass-control leaflet-control');
-                     div.style.background = 'rgba(6,18,38,0.92)';
-                     div.style.color = '#e2e8f0';
-                     div.style.width = '34px';
-                     div.style.height = '34px';
-                     div.style.borderRadius = '50%';
-                     div.style.border = '1px solid rgba(255,255,255,0.18)';
-                     div.style.boxShadow = '0 3px 8px rgba(0,0,0,0.5)';
-                     div.style.display = 'flex';
-                     div.style.alignItems = 'center';
-                     div.style.justifyContent = 'center';
-                     div.style.cursor = 'pointer';
-                     div.title = "Vehicle Heading: {bearing:.0f}° {card_dir}";
-                     div.innerHTML = `<div style="transform:rotate({bearing:.1f}deg);font-size:19px;line-height:1;transition:transform 0.4s ease;">🧭</div>`;
-                     
-                     L.DomEvent.disableClickPropagation(div);
-                     L.DomEvent.disableScrollPropagation(div);
-                     return div;
-                 }};
-                 compassControl.addTo(map_obj);
-                 
-                 // 📊 Map Legend Control (Bottom Left)
-                 var legendControl = L.control({{ position: 'bottomleft' }});
-                 legendControl.onAdd = function(map) {{
-                     var div = L.DomUtil.create('div', 'legend-control leaflet-control');
-                    div.style.background = 'rgba(6,18,38,0.93)';
-                    div.style.color = '#e2e8f0';
-                    div.style.padding = '10px 14px';
-                    div.style.borderRadius = '10px';
-                    div.style.border = '1px solid rgba(255,255,255,0.1)';
-                    div.style.fontFamily = 'Inter, sans-serif';
-                    div.style.fontSize = '10.5px';
-                    div.style.minWidth = '175px';
-                    div.style.boxShadow = '0 4px 12px rgba(0,0,0,0.35)';
-                    div.innerHTML = `{legend_inner_html}`;
+                try {{
+                    // 🧭 Compass / Orient button Control Class
+                    var CompassControlClass = L.Control.extend({{
+                        options: {{ position: 'topright' }},
+                        onAdd: function(map) {{
+                            var div = L.DomUtil.create('div', 'compass-control leaflet-control');
+                            div.style.background = 'rgba(6,18,38,0.92)';
+                            div.style.color = '#e2e8f0';
+                            div.style.width = '34px';
+                            div.style.height = '34px';
+                            div.style.borderRadius = '50%';
+                            div.style.border = '1px solid rgba(255,255,255,0.18)';
+                            div.style.boxShadow = '0 3px 8px rgba(0,0,0,0.5)';
+                            div.style.display = 'flex';
+                            div.style.alignItems = 'center';
+                            div.style.justifyContent = 'center';
+                            div.style.cursor = 'pointer';
+                            div.title = "Vehicle Heading: {bearing:.0f}° {card_dir}";
+                            div.innerHTML = `<div style="transform:rotate({bearing:.1f}deg);font-size:19px;line-height:1;transition:transform 0.4s ease;">🧭</div>`;
+                            
+                            L.DomEvent.disableClickPropagation(div);
+                            L.DomEvent.disableScrollPropagation(div);
+                            return div;
+                        }}
+                    }});
+                    map_obj.addControl(new CompassControlClass());
                     
-                    L.DomEvent.disableClickPropagation(div);
-                    L.DomEvent.disableScrollPropagation(div);
-                    return div;
-                }};
-                legendControl.addTo(map_obj);
-                
-                // 🖱️ Click Helper
-                {click_setup_js}
+                    // 📊 Map Legend Control Class
+                    var LegendControlClass = L.Control.extend({{
+                        options: {{ position: 'bottomleft' }},
+                        onAdd: function(map) {{
+                            var div = L.DomUtil.create('div', 'legend-control leaflet-control');
+                            div.style.background = 'rgba(6,18,38,0.93)';
+                            div.style.color = '#e2e8f0';
+                            div.style.padding = '10px 14px';
+                            div.style.borderRadius = '10px';
+                            div.style.border = '1px solid rgba(255,255,255,0.1)';
+                            div.style.fontFamily = 'Inter, sans-serif';
+                            div.style.fontSize = '10.5px';
+                            div.style.minWidth = '175px';
+                            div.style.boxShadow = '0 4px 12px rgba(0,0,0,0.35)';
+                            div.innerHTML = `{legend_inner_html}`;
+                            
+                            L.DomEvent.disableClickPropagation(div);
+                            L.DomEvent.disableScrollPropagation(div);
+                            return div;
+                        }}
+                    }});
+                    map_obj.addControl(new LegendControlClass());
+                    
+                    // 🖱️ Click Helper
+                    {click_setup_js}
+                }} catch (e) {{
+                    console.error("Leaflet overlays error:", e);
+                }}
             }}
         }}, 100);
     }})();
