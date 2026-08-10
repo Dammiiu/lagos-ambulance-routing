@@ -137,7 +137,7 @@ st.set_page_config(
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-*, html, body { font-family: 'Inter', sans-serif !important; }
+html, body, [data-testid="stAppViewContainer"] { font-family: 'Inter', sans-serif !important; }
 .stApp { background: #0b1120; }
 .main .block-container { padding-top:0.8rem; max-width:100%; padding-left:1rem; padding-right:1rem; }
 
@@ -633,7 +633,7 @@ def build_navigable_map(stations_gdf, incidents_gdf, sa_polys,
         m.get_root().html.add_child(folium.Element(click_html))
 
     compass_html = f"""
-    <div style="position:fixed;top:65px;right:14px;z-index:9999;
+    <div style="position:absolute;top:10px;right:10px;z-index:9999;
                 background:rgba(6,18,38,0.92);color:#e2e8f0;
                 padding:7px 12px;border-radius:10px;
                 border:1px solid rgba(255,255,255,0.14);
@@ -672,7 +672,7 @@ def build_navigable_map(stations_gdf, incidents_gdf, sa_polys,
     return m
 
 
-def add_dynamic_markers(m, incident_ll, vehicle_ll, bearing):
+def add_dynamic_markers(m, incident_ll, vehicle_ll, bearing, dest_ll=None):
     import folium
     if incident_ll:
         ilat, ilon = incident_ll
@@ -708,6 +708,19 @@ def add_dynamic_markers(m, incident_ll, vehicle_ll, bearing):
             ),
             popup="Vehicle Current Position",
             tooltip="Vehicle Current Position",
+        ).add_to(m)
+
+    if dest_ll:
+        dlat, dlon = dest_ll
+        folium.Marker(
+            [dlat, dlon],
+            icon=folium.DivIcon(
+                html='<div style="font-size:26px;transform:translate(-50%,-50%);'
+                     'filter:drop-shadow(0 2px 4px #000)">🏁</div>',
+                icon_size=(36, 36), icon_anchor=(18, 18),
+            ),
+            popup="Custom Destination (Hospital Overwrite)",
+            tooltip="Custom Destination (Hospital Overwrite)",
         ).add_to(m)
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -974,7 +987,7 @@ def build_3d_pydeck_chart(
         color = [37, 99, 235, 240] if ftype == "medical" else [220, 38, 38, 240]
         symbol = "🏥" if ftype == "medical" else "🚒"
         station_data.append({"name": srow["name"], "type": f"{ftype.title()} Station",
-                              "position": [lon, lat, 10], "color": color, "radius": 200})
+                              "position": [lon, lat, 10], "color": color, "radius": 40})
         station_sign_data.append({
             "position": [lon, lat, 35],
             "text": f"{symbol} {srow['name']}",
@@ -986,7 +999,7 @@ def build_3d_pydeck_chart(
     layers.append(pdk.Layer(
         "ScatterplotLayer", data=pd.DataFrame(station_data),
         get_position="position", get_fill_color="color", get_radius="radius",
-        radius_min_pixels=10, pickable=True,
+        radius_min_pixels=6, pickable=True,
     ))
     if station_sign_data:
         layers.append(pdk.Layer(
@@ -1017,7 +1030,7 @@ def build_3d_pydeck_chart(
         symbol = inc_symbols.get(itype, "🚨")
         inc_data.append({"name": f"Incident #{i}", "type": f"{itype} Incident",
                           "position": [lon, lat, 10],
-                          "color": cmap.get(itype, [156,163,175,230]), "radius": 75})
+                          "color": cmap.get(itype, [156,163,175,230]), "radius": 25})
         inc_sign_data.append({
             "position": [lon, lat, 22],
             "text": symbol,
@@ -1029,7 +1042,7 @@ def build_3d_pydeck_chart(
     layers.append(pdk.Layer(
         "ScatterplotLayer", data=pd.DataFrame(inc_data),
         get_position="position", get_fill_color="color", get_radius="radius",
-        radius_min_pixels=5, pickable=True,
+        radius_min_pixels=4, pickable=True,
     ))
     if inc_sign_data:
         layers.append(pdk.Layer(
@@ -1120,6 +1133,26 @@ def build_3d_pydeck_chart(
                         get_path="path", get_color=[251,146,60,230], get_width=10,
                         width_min_pixels=5, pickable=True,
                     ))
+
+    # Draw custom destination if present
+    clicked_dest_lat = st.session_state.get("clicked_dest_lat")
+    clicked_dest_lon = st.session_state.get("clicked_dest_lon")
+    if clicked_dest_lat and clicked_dest_lon:
+        layers.append(pdk.Layer(
+            "ScatterplotLayer",
+            data=pd.DataFrame([{"position": [clicked_dest_lon, clicked_dest_lat, 10], "color": [249, 115, 22, 240], "radius": 40, "name": "Custom Destination", "type": "Hospital Overwrite"}]),
+            get_position="position", get_fill_color="color", get_radius="radius",
+            radius_min_pixels=6, pickable=True,
+        ))
+        layers.append(pdk.Layer(
+            "TextLayer",
+            data=pd.DataFrame([{"position": [clicked_dest_lon, clicked_dest_lat, 22], "text": "🏁 Custom Destination", "color": [255, 255, 255, 255], "name": "Custom Destination", "type": "Hospital Overwrite"}]),
+            get_position="position", get_text="text", get_size=20,
+            size_min_pixels=14, size_max_pixels=28, get_color="color",
+            get_alignment_baseline="'center'", get_text_anchor="'middle'",
+            background=True, get_background_color=[15, 23, 42, 230],
+            font_family="'Inter', sans-serif", font_weight="bold", pickable=True,
+        ))
 
     if vehicle_ll:
         vlat, vlon = vehicle_ll
@@ -1314,6 +1347,9 @@ def main():
         "voice_enabled": False, "last_spoken_step": None,
         "clicked_inc_lat": None, "clicked_inc_lon": None,
         "clicked_veh_lat": None, "clicked_veh_lon": None,
+        "clicked_dest_lat": None, "clicked_dest_lon": None,
+        "custom_dest_node": None,
+        "map_clicked_lat": None, "map_clicked_lon": None,
         "click_mode": None,
         "geo_lat": None, "geo_lon": None,
         "geo_granted": False,          # True once user has detected location
@@ -1341,13 +1377,8 @@ def main():
             last_processed = st.session_state.get("last_processed_click")
             if last_processed != (clat, clon):
                 st.session_state["last_processed_click"] = (clat, clon)
-                c_mode = st.session_state.get("click_mode")
-                if c_mode == "incident":
-                    st.session_state["clicked_inc_lat"] = clat
-                    st.session_state["clicked_inc_lon"] = clon
-                elif c_mode == "vehicle":
-                    st.session_state["clicked_veh_lat"] = clat
-                    st.session_state["clicked_veh_lon"] = clon
+                st.session_state["map_clicked_lat"] = clat
+                st.session_state["map_clicked_lon"] = clon
 
     # ── Auto-refresh tick — sim tracking OR live nav ───────────────────────────
     if st.session_state["sim_tracking"] and not st.session_state["live_nav_mode"] and st.session_state.get("result"):
@@ -1391,18 +1422,107 @@ def main():
         
     with st.sidebar:
         st.markdown("---")
-        st.markdown("### Network Stats")
+        med_5 = 100*len(sa_data[5]['medical'])/total_nodes
+        fire_5 = 100*len(sa_data[5]['fire'])/total_nodes
+        med_10_pct = 100*med_10/total_nodes
+        fire_10_pct = 100*fire_10/total_nodes
+        med_15_pct = 100*med_15/total_nodes
+        fire_15_pct = 100*fire_15/total_nodes
+
         st.markdown(f"""
-        <div class="info-box">
-            <b>{len(G.nodes):,}</b> road nodes · <b>{len(G.edges):,}</b> edges<br>
-            <b>{n_med}</b> 🏥 medical · <b>{n_fire}</b> 🚒 fire stations<br>
-            <b>{len(incidents_gdf)}</b> simulated incidents
+        <style>
+        .stat-group {{
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 14px;
+            margin-bottom: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }}
+        .stat-header {{
+            font-size: 0.75rem;
+            color: #94a3b8;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 10px;
+        }}
+        .stat-row {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 0.8rem;
+        }}
+        .bar-container {{
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+            height: 6px;
+            overflow: hidden;
+            width: 100%;
+            margin-top: 4px;
+            margin-bottom: 12px;
+        }}
+        .med-bar {{
+            background: #3b82f6;
+            height: 100%;
+        }}
+        .fire-bar {{
+            background: #ef4444;
+            height: 100%;
+        }}
+        .badge-value {{
+            font-weight: 700;
+            color: #f8fafc;
+        }}
+        </style>
+        
+        <div class="stat-group">
+            <div class="stat-header">📊 System Overview</div>
+            <div class="stat-row">
+                <span>🛣️ Road Network</span>
+                <span class="badge-value">{len(G.nodes):,} nodes</span>
+            </div>
+            <div class="stat-row">
+                <span>🏥 Medical Stations</span>
+                <span class="badge-value" style="color:#93c5fd">{n_med}</span>
+            </div>
+            <div class="stat-row">
+                <span>🚒 Fire Stations</span>
+                <span class="badge-value" style="color:#fca5a5">{n_fire}</span>
+            </div>
+            <div class="stat-row">
+                <span>🚨 Simulated Incidents</span>
+                <span class="badge-value">{len(incidents_gdf)}</span>
+            </div>
         </div>
-        <div class="info-box" style="margin-top:0.25rem">
-            Coverage analysis:<br>
-            5-min:  Med {100*len(sa_data[5]['medical'])/total_nodes:.0f}% · Fire {100*len(sa_data[5]['fire'])/total_nodes:.0f}%<br>
-            10-min: Med {100*med_10/total_nodes:.0f}% · Fire {100*fire_10/total_nodes:.0f}%<br>
-            15-min: Med {100*med_15/total_nodes:.0f}% · Fire {100*fire_15/total_nodes:.0f}%
+        
+        <div class="stat-group">
+            <div class="stat-header">⏱️ Network Coverage Analysis</div>
+            
+            <div class="stat-row" style="margin-bottom: 0;">
+                <span>5-Min Medical coverage</span>
+                <span class="badge-value" style="color:#60a5fa">{med_5:.0f}%</span>
+            </div>
+            <div class="bar-container"><div class="med-bar" style="width: {med_5}%"></div></div>
+            
+            <div class="stat-row" style="margin-bottom: 0;">
+                <span>5-Min Fire coverage</span>
+                <span class="badge-value" style="color:#f87171">{fire_5:.0f}%</span>
+            </div>
+            <div class="bar-container"><div class="fire-bar" style="width: {fire_5}%"></div></div>
+            
+            <div class="stat-row" style="margin-bottom: 0;">
+                <span>10-Min Medical coverage</span>
+                <span class="badge-value" style="color:#60a5fa">{med_10_pct:.0f}%</span>
+            </div>
+            <div class="bar-container"><div class="med-bar" style="width: {med_10_pct}%"></div></div>
+            
+            <div class="stat-row" style="margin-bottom: 0;">
+                <span>10-Min Fire coverage</span>
+                <span class="badge-value" style="color:#f87171">{fire_10_pct:.0f}%</span>
+            </div>
+            <div class="bar-container"><div class="fire-bar" style="width: {fire_10_pct}%"></div></div>
         </div>
         """, unsafe_allow_html=True)
     
@@ -1410,6 +1530,113 @@ def main():
     st.markdown("### 🚑 Emergency Dispatch Panel")
     with st.container():
         st.markdown("<div class='dispatch-box'>", unsafe_allow_html=True)
+        
+        # 🔍 Search & Pin Address on Map
+        search_query = st_keyup("🔍 Search Address or Place in Lagos (e.g. Yaba, Ikeja, Lekki):", key="loc_search_query", debounce=500)
+        
+        if search_query and len(search_query.strip()) >= 2:
+            sq_lower = search_query.strip().lower()
+            # Fast local dictionary lookup
+            local_matches = []
+            for k, v in LAGOS_AREAS.items():
+                if sq_lower in k.lower():
+                    local_matches.append({
+                        "place_id": f"local_{k.replace(' ', '')}",
+                        "display_name": v["display_name"],
+                        "lat": v["lat"],
+                        "lon": v["lon"]
+                    })
+            
+            # If not enough local matches, query Nominatim (cached via session state)
+            nominatim_results = []
+            if len(sq_lower) >= 4:
+                cache_key = f"nominatim_{sq_lower}"
+                if cache_key not in st.session_state:
+                    with st.spinner("Searching OSM map..."):
+                        st.session_state[cache_key] = geocode_lagos(search_query)
+                nominatim_results = st.session_state[cache_key] or []
+            
+            # Combine
+            all_matches = local_matches + [
+                {
+                    "place_id": f"osm_{r['place_id']}",
+                    "display_name": r["display_name"],
+                    "lat": float(r["lat"]),
+                    "lon": float(r["lon"])
+                }
+                for r in nominatim_results
+            ]
+            
+            # Unique by display_name
+            seen = set()
+            unique_matches = []
+            for m in all_matches:
+                if m["display_name"] not in seen:
+                    seen.add(m["display_name"])
+                    unique_matches.append(m)
+            
+            # Render Matches
+            if unique_matches:
+                st.markdown("<div style='margin-bottom:8px; color:#94a3b8; font-size:0.8rem;'>Suggestions (Click to pin on map):</div>", unsafe_allow_html=True)
+                cols = st.columns(min(len(unique_matches), 4))
+                for i, r in enumerate(unique_matches[:4]):
+                    dname = r['display_name'].split(",")[0]
+                    cx, cy = ll_to_utm(float(r["lat"]), float(r["lon"]))
+                    _, snap_dist = snap_point_to_node(nodes_gdf, Point(cx, cy))
+                    in_study = snap_dist < 6000
+                    
+                    if in_study:
+                        if cols[i].button(f"📍 {dname}", key=f"search_set_{r['place_id']}", use_container_width=True):
+                            st.session_state["map_clicked_lat"] = float(r["lat"])
+                            st.session_state["map_clicked_lon"] = float(r["lon"])
+                            st.session_state["loc_search_query"] = "" # Clear search
+                            st.rerun()
+                    else:
+                        cols[i].button(f"❌ {dname} (Out of Bounds)", key=f"search_set_{r['place_id']}", use_container_width=True, disabled=True, help="This location is outside our study area in Lagos.")
+            else:
+                st.info("No matching locations found in Lagos.")
+        
+        # 📍 Map Click / Search Pinning Prompt
+        if st.session_state.get("map_clicked_lat") and st.session_state.get("map_clicked_lon"):
+            mlat = st.session_state["map_clicked_lat"]
+            mlon = st.session_state["map_clicked_lon"]
+            st.markdown(f"""
+            <div style="background: rgba(30, 58, 138, 0.95); padding: 12px 18px; border-radius: 10px; border: 1.5px solid #3b82f6; margin-bottom: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
+                <div style="color: #93c5fd; font-weight: 700; font-size: 0.85rem; margin-bottom: 2px;">
+                    📍 Selected Location: <b>{mlat:.5f}°N, {mlon:.5f}°E</b>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            cb1, cb2, cb3, cb4 = st.columns(4)
+            if cb1.button("🚨 Set as Incident", key="btn_set_inc", use_container_width=True, type="primary"):
+                st.session_state["clicked_inc_lat"] = mlat
+                st.session_state["clicked_inc_lon"] = mlon
+                st.session_state["inc_mode_sel"] = "Click on map"
+                st.session_state["map_clicked_lat"] = None
+                st.session_state["map_clicked_lon"] = None
+                st.rerun()
+            if cb2.button("🚑 Set as Vehicle Start", key="btn_set_veh", use_container_width=True, type="primary"):
+                st.session_state["clicked_veh_lat"] = mlat
+                st.session_state["clicked_veh_lon"] = mlon
+                st.session_state["veh_mode_sel"] = "Click on map"
+                st.session_state["map_clicked_lat"] = None
+                st.session_state["map_clicked_lon"] = None
+                st.rerun()
+            if cb3.button("🏥 Set as Custom Destination", key="btn_set_dest", use_container_width=True, type="primary"):
+                st.session_state["clicked_dest_lat"] = mlat
+                st.session_state["clicked_dest_lon"] = mlon
+                dx, dy = ll_to_utm(mlat, mlon)
+                dest_node, _ = snap_point_to_node(nodes_gdf, Point(dx, dy))
+                st.session_state["custom_dest_node"] = dest_node
+                st.session_state["map_clicked_lat"] = None
+                st.session_state["map_clicked_lon"] = None
+                st.rerun()
+            if cb4.button("❌ Dismiss / Clear Pins", key="btn_dismiss_click", use_container_width=True):
+                st.session_state["map_clicked_lat"] = None
+                st.session_state["map_clicked_lon"] = None
+                st.rerun()
+
+        st.markdown("<hr style='border-color: rgba(255,255,255,0.08); margin-top: 5px; margin-bottom: 15px;'>", unsafe_allow_html=True)
         col1, col2, col3 = st.columns([1, 1, 1], gap="medium")
         with col1:
             st.markdown("#### 🚨 Incident Location")
@@ -1681,7 +1908,7 @@ def main():
                                 result = None
                     else:
                         # Standard routing from station
-                        result = two_leg_route(G_working, nodes_gdf, inc_node, inc_type, active_stations, blocked_edges=st.session_state["blocked_edges"])
+                        result = two_leg_route(G_working, nodes_gdf, inc_node, inc_type, active_stations, blocked_edges=st.session_state["blocked_edges"], custom_hospital_node=st.session_state.get("custom_dest_node"))
 
             if result is None:
                 st.error("No reachable facility found — try a different location or clear active filters.")
@@ -1793,22 +2020,7 @@ def main():
                 else:
                     st.session_state["leg2_ll"] = []
 
-    with st.sidebar:
-        st.markdown("---")
-        st.markdown("### Network Stats")
-        st.markdown(f"""
-        <div class="info-box">
-            <b>{len(G.nodes):,}</b> road nodes · <b>{len(G.edges):,}</b> edges<br>
-            <b>{n_med}</b> 🏥 medical · <b>{n_fire}</b> 🚒 fire stations<br>
-            <b>{len(incidents_gdf)}</b> simulated incidents
-        </div>
-        <div class="info-box" style="margin-top:0.25rem">
-            Coverage analysis:<br>
-            5-min:  Med {100*len(sa_data[5]['medical'])/total_nodes:.0f}% · Fire {100*len(sa_data[5]['fire'])/total_nodes:.0f}%<br>
-            10-min: Med {100*med_10/total_nodes:.0f}% · Fire {100*fire_10/total_nodes:.0f}%<br>
-            15-min: Med {100*med_15/total_nodes:.0f}% · Fire {100*fire_15/total_nodes:.0f}%
-        </div>
-        """, unsafe_allow_html=True)
+
 
     # ── MAIN LAYOUT ────────────────────────────────────────────────────────────
     map_col, panel_col = st.columns([2.5, 1], gap="small")
@@ -2173,12 +2385,19 @@ def main():
                     trk_label = "⏸ Pause" if is_trk else "▶ Start Tracking"
                     if st.button(trk_label, use_container_width=True, key="btn_trk"):
                         st.session_state["sim_tracking"] = not is_trk
+                        if not is_trk:
+                            st.session_state["recenter_trigger"] = True
                         st.rerun()
                 with bc2:
                     if st.button("↺ Reset", use_container_width=True, key="btn_rst"):
                         st.session_state["sim_progress"]    = 0.0
                         st.session_state["sim_tracking"]    = False
                         st.session_state["last_spoken_step"] = None
+                        st.session_state["custom_dest_node"] = None
+                        st.session_state["clicked_dest_lat"] = None
+                        st.session_state["clicked_dest_lon"] = None
+                        st.session_state["map_clicked_lat"] = None
+                        st.session_state["map_clicked_lon"] = None
                         st.rerun()
                 with bc3:
                     if st.button("🎯 Recenter", use_container_width=True, key="btn_rcnt"):
@@ -2338,12 +2557,18 @@ def main():
                         if not is_trk:
                             import time
                             st.session_state["sim_last_update"] = time.time()
+                            st.session_state["recenter_trigger"] = True
                         st.rerun()
                 with c_btn2:
                     if st.button("↺ Reset", use_container_width=True, key="map_ctrl_rst"):
                         st.session_state["sim_progress"] = 0.0
                         st.session_state["sim_tracking"] = False
                         st.session_state["last_spoken_step"] = None
+                        st.session_state["custom_dest_node"] = None
+                        st.session_state["clicked_dest_lat"] = None
+                        st.session_state["clicked_dest_lon"] = None
+                        st.session_state["map_clicked_lat"] = None
+                        st.session_state["map_clicked_lon"] = None
                         if "sim_last_update" in st.session_state:
                             del st.session_state["sim_last_update"]
                         st.rerun()
@@ -2480,7 +2705,10 @@ def main():
                         exact_h_coord=exact_h_coord,
                     )
                 
-                add_dynamic_markers(base_m, show_inc_ll, show_veh_ll, veh_bearing)
+                show_dest_ll = None
+                if st.session_state.get("clicked_dest_lat"):
+                    show_dest_ll = (st.session_state["clicked_dest_lat"], st.session_state["clicked_dest_lon"])
+                add_dynamic_markers(base_m, show_inc_ll, show_veh_ll, veh_bearing, dest_ll=show_dest_ll)
     
                 _rv = st.session_state.get("route_version", 0)
                 map_key = f"folium_2d_rv{_rv}_inc{st.session_state.get('clicked_inc_lat')}_{st.session_state.get('clicked_inc_lon')}_veh{st.session_state.get('clicked_veh_lat')}_{st.session_state.get('clicked_veh_lon')}"

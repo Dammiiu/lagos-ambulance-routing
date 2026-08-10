@@ -176,6 +176,7 @@ def two_leg_route(
     incident_type: str,
     stations_gdf: gpd.GeoDataFrame,
     blocked_edges: list = None,
+    custom_hospital_node = None,
 ):
     """
     Two-Leg Full Emergency Response Chain.
@@ -230,36 +231,59 @@ def two_leg_route(
 
     # ── Leg 2: incident scene → nearest medical facility (Medical/RTA only) ──
     if incident_type in ("Medical", "RTA", "medical", "rta"):
-        # All medical stations act as potential receiving facilities
-        medical_stations = stations_gdf[stations_gdf["facility_type"] == "medical"].copy()
+        if custom_hospital_node is not None and custom_hospital_node in G.nodes:
+            # Find in stations_gdf
+            h_match = stations_gdf[stations_gdf["node_id"] == custom_hospital_node]
+            if len(h_match) > 0:
+                hrow = h_match.iloc[0]
+                h_name = hrow["name"]
+                h_geom = hrow.geometry
+            else:
+                h_name = "Custom Destination"
+                node_row = nodes_gdf.loc[custom_hospital_node]
+                h_geom = node_row.geometry
+                
+            t = dijkstra_distance(G, incident_node, custom_hospital_node, blocked_edges=blocked_edges)
+            if t < float("inf"):
+                leg2_path, _ = shortest_path(G, incident_node, custom_hospital_node, blocked_edges=blocked_edges)
+                result["has_leg2"]           = True
+                result["leg2_hospital_name"] = h_name
+                result["leg2_hospital_node"] = custom_hospital_node
+                result["leg2_hospital_geom"] = h_geom
+                result["leg2_path"]          = leg2_path
+                result["leg2_time_min"]      = t
+                result["total_time_min"]     = result["leg1_time_min"] + t
+        else:
+            # All medical stations act as potential receiving facilities
+            medical_stations = stations_gdf[stations_gdf["facility_type"] == "medical"].copy()
 
-        if len(medical_stations) == 0:
-            return result
+            if len(medical_stations) == 0:
+                return result
 
-        best2 = {"time_min": float("inf")}
-        for _, hrow in medical_stations.iterrows():
-            h_node = hrow.get("node_id")
-            if h_node is None or h_node not in G.nodes:
-                continue
-            # From incident to hospital
-            t = dijkstra_distance(G, incident_node, h_node, blocked_edges=blocked_edges)
-            if t < best2["time_min"]:
-                best2 = {
-                    "hospital_name": hrow["name"],
-                    "hospital_node": h_node,
-                    "hospital_geom": hrow.geometry,
-                    "time_min":      t,
-                }
+            best2 = {"time_min": float("inf")}
+            for _, hrow in medical_stations.iterrows():
+                h_node = hrow.get("node_id")
+                if h_node is None or h_node not in G.nodes:
+                    continue
+                # From incident to hospital
+                t = dijkstra_distance(G, incident_node, h_node, blocked_edges=blocked_edges)
+                if t < best2["time_min"]:
+                    best2 = {
+                        "hospital_name": hrow["name"],
+                        "hospital_node": h_node,
+                        "hospital_geom": hrow.geometry,
+                        "time_min":      t,
+                    }
 
-        if best2["time_min"] != float("inf"):
-            leg2_path, _ = shortest_path(G, incident_node, best2["hospital_node"], blocked_edges=blocked_edges)
-            result["has_leg2"]           = True
-            result["leg2_hospital_name"] = best2["hospital_name"]
-            result["leg2_hospital_node"] = best2["hospital_node"]
-            result["leg2_hospital_geom"] = best2["hospital_geom"]
-            result["leg2_path"]          = leg2_path
-            result["leg2_time_min"]      = best2["time_min"]
-            result["total_time_min"]     = leg1["network_time_min"] + best2["time_min"]
+            if best2["time_min"] != float("inf"):
+                leg2_path, _ = shortest_path(G, incident_node, best2["hospital_node"], blocked_edges=blocked_edges)
+                result["has_leg2"]           = True
+                result["leg2_hospital_name"] = best2["hospital_name"]
+                result["leg2_hospital_node"] = best2["hospital_node"]
+                result["leg2_hospital_geom"] = best2["hospital_geom"]
+                result["leg2_path"]          = leg2_path
+                result["leg2_time_min"]      = best2["time_min"]
+                result["total_time_min"]     = result["leg1_time_min"] + best2["time_min"]
 
     return result
 
@@ -389,36 +413,3 @@ def _run_synthetic_test():
     print("Model 5 (Straight-line): PASS")
 
     print("\nAll synthetic tests PASSED.")
-
-
-if __name__ == "__main__":
-    _run_synthetic_test()
-
-    import sys, os
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from src.network_builder import build_graph
-
-    print("\n" + "=" * 60)
-    print("REAL DATA TEST — 5 sample incidents (2-leg model)")
-    print("=" * 60)
-
-    G, nodes_gdf = build_graph()
-    stations_gdf = gpd.read_file("data/ambulance_stations.gpkg").to_crs("EPSG:32631")
-    stations_gdf = snap_stations_to_graph(stations_gdf, nodes_gdf)
-    incidents_gdf = gpd.read_file("data/incident_points.gpkg").to_crs("EPSG:32631")
-    incidents_gdf = snap_incidents_to_graph(incidents_gdf, nodes_gdf)
-    incidents_gdf = incidents_gdf.reset_index(drop=True)
-
-    sample = incidents_gdf.groupby("type").apply(
-        lambda x: x.head(2), include_groups=False
-    ).reset_index(level=0).head(5)
-
-    print(f"\n{'ID':<4} {'Type':<8} {'Leg1 Station':<35} {'L1':>5} {'Leg2 Hospital':<35} {'L2':>5} {'Tot':>6}")
-    print("-" * 100)
-    for _, row in sample.iterrows():
-        r = two_leg_route(G, nodes_gdf, row["node_id"], row["type"], stations_gdf)
-        if r:
-            l2name = r["leg2_hospital_name"] if r["has_leg2"] else "N/A (fire)"
-            l2t = f"{r['leg2_time_min']:.2f}" if r["has_leg2"] else "—"
-            print(f"{row.name:<4} {row['type']:<8} {r['leg1_station_name']:<35} "
-                  f"{r['leg1_time_min']:>5.2f} {l2name:<35} {l2t:>5} {r['total_time_min']:>5.2f}m")
