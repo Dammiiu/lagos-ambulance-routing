@@ -231,6 +231,15 @@ st.markdown("""
     border-radius:8px;padding:0.5rem 0.7rem;font-size:0.76rem;color:#6ee7b7;margin-top:0.3rem; }
 .geo-denied { background:rgba(185,28,28,0.08);border:1px solid rgba(185,28,28,0.25);
     border-radius:8px;padding:0.55rem 0.8rem;font-size:0.74rem;color:#f87171;margin-top:0.3rem; }
+.dispatch-box {
+    background: linear-gradient(135deg, rgba(13,31,56,0.95), rgba(6,20,38,0.95));
+    border: 1px solid rgba(99,179,237,0.3);
+    border-radius: 12px;
+    padding: 18px 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    backdrop-filter: blur(10px);
+}
 
 /* ── Mobile & Responsive Design (consolidated) ── */
 @media (max-width: 768px) {
@@ -1126,7 +1135,7 @@ def build_3d_pydeck_chart(
         # High-visibility 3D directional arrow (➤) rotated by heading
         layers.append(pdk.Layer(
             "TextLayer",
-            data=pd.DataFrame([{"position": [vlon, vlat, 30], "text": "➤", "bearing": -bearing + 90, "color": [37, 99, 235, 255]}]),
+            data=pd.DataFrame([{"position": [vlon, vlat, 30], "text": "➤", "bearing": bearing - 90, "color": [37, 99, 235, 255]}]),
             get_position="position",
             get_text="text",
             get_angle="bearing",
@@ -1359,8 +1368,8 @@ def main():
         total_time_min = st.session_state["result"].get("total_time_min", 5.0)
         total_duration_sec = max(total_time_min * 60.0, 1.0)
         
-        # 30x simulation speed multiplier (10 min route takes 20s)
-        sim_speed_multiplier = 30.0
+        # 1x, 2x, 5x, etc. simulation speed multiplier
+        sim_speed_multiplier = float(st.session_state.get("sim_speed_sel", 5.0))
         prog_increment = (dt / total_duration_sec) * sim_speed_multiplier
         
         next_prog = min(1.0, st.session_state["sim_progress"] + prog_increment)
@@ -1379,237 +1388,199 @@ def main():
         show_cov = st.toggle("Coverage zones", value=True)
         cov_t = st.radio("Threshold", [5, 10, 15], index=1,
                          format_func=lambda x: f"{x} min", horizontal=True)
-
-        # ── Location Search (Priority 2) ───────────────────────────────────────
-        st.markdown("---")
-        st.markdown("### 🔍 Search Location")
-        search_query = st_keyup("Enter place or address in Lagos:", key="loc_search_query", debounce=500)
         
-        if search_query and len(search_query.strip()) >= 2:
-            sq_lower = search_query.strip().lower()
-            
-            # Fast local dictionary lookup
-            local_matches = []
-            for k, v in LAGOS_AREAS.items():
-                if sq_lower in k.lower():
-                    local_matches.append({
-                        "place_id": f"local_{k.replace(' ', '')}",
-                        "display_name": v["display_name"],
-                        "lat": v["lat"],
-                        "lon": v["lon"]
-                    })
-            
-            # Use local matches, otherwise fallback to API
-            if local_matches:
-                st.session_state["search_results"] = local_matches
-            elif len(sq_lower) >= 4:
-                cache_key = f"nominatim_{sq_lower}"
-                if cache_key not in st.session_state:
-                    with st.spinner("Searching Lagos map..."):
-                        st.session_state[cache_key] = geocode_lagos(search_query)
-                        
-                results = st.session_state[cache_key]
-                if results:
-                    st.session_state["search_results"] = results
-                else:
-                    st.error("Search unavailable or no results. Please use manual coordinates.")
-                    st.session_state["search_results"] = None
-            else:
-                st.session_state["search_results"] = None
-        else:
-            st.session_state["search_results"] = None
-                    
-        if st.session_state.get("search_results"):
-            st.markdown("<div style='margin-bottom:8px; color:#94a3b8; font-size:0.8rem;'>Matches (Click to set):</div>", unsafe_allow_html=True)
-            for r in st.session_state["search_results"][:4]:
-                dname = r['display_name'].split(",")[0]
-                c1, c2 = st.columns(2)
-                if c1.button(f"🚨 Incident: {dname}", key=f"inc_{r['place_id']}", use_container_width=True):
-                    st.session_state["clicked_inc_lat"] = float(r["lat"])
-                    st.session_state["clicked_inc_lon"] = float(r["lon"])
-                    st.session_state["inc_mode_sel"] = "Enter coordinates"
-                    st.session_state["search_results"] = None
-                    st.rerun()
-                if c2.button(f"🚑 Vehicle: {dname}", key=f"veh_{r['place_id']}", use_container_width=True):
-                    st.session_state["clicked_veh_lat"] = float(r["lat"])
-                    st.session_state["clicked_veh_lon"] = float(r["lon"])
-                    st.session_state["veh_mode_sel"] = "Enter coordinates"
-                    st.session_state["search_results"] = None
-                    st.rerun()
-
-        # ── Incident location ──────────────────────────────────────────────────
+    with st.sidebar:
         st.markdown("---")
-        st.markdown("### Incident Location")
-        inc_mode = st.radio(
-            "Set incident by:",
-            ["Preset list", "Click on map", "Enter coordinates"],
-            key="inc_mode_sel"
-        )
-        inc_node, inc_geom, inc_type, inc_lat, inc_lon = None, None, "Medical", None, None
+        st.markdown("### Network Stats")
+        st.markdown(f"""
+        <div class="info-box">
+            <b>{len(G.nodes):,}</b> road nodes · <b>{len(G.edges):,}</b> edges<br>
+            <b>{n_med}</b> 🏥 medical · <b>{n_fire}</b> 🚒 fire stations<br>
+            <b>{len(incidents_gdf)}</b> simulated incidents
+        </div>
+        <div class="info-box" style="margin-top:0.25rem">
+            Coverage analysis:<br>
+            5-min:  Med {100*len(sa_data[5]['medical'])/total_nodes:.0f}% · Fire {100*len(sa_data[5]['fire'])/total_nodes:.0f}%<br>
+            10-min: Med {100*med_10/total_nodes:.0f}% · Fire {100*fire_10/total_nodes:.0f}%<br>
+            15-min: Med {100*med_15/total_nodes:.0f}% · Fire {100*fire_15/total_nodes:.0f}%
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # ── Emergency Dispatch Panel (Main Screen Top, Easily Accessible) ──
+    st.markdown("### 🚑 Emergency Dispatch Panel")
+    with st.container():
+        st.markdown("<div class='dispatch-box'>", unsafe_allow_html=True)
+        col1, col2, col3 = st.columns([1, 1, 1], gap="medium")
+        with col1:
+            st.markdown("#### 🚨 Incident Location")
+            inc_mode = st.radio(
+                "Set incident by:",
+                ["Preset list", "Click on map", "Enter coordinates"],
+                key="inc_mode_sel"
+            )
+            inc_node, inc_geom, inc_type, inc_lat, inc_lon = None, None, "Medical", None, None
 
-        if inc_mode == "Preset list":
-            st.session_state["click_mode"] = None
-            inc_labels = [f"#{i} — {r['type']}" for i, r in incidents_gdf.iterrows()]
-            sel = st.selectbox("Select incident:", inc_labels)
-            sel_idx  = int(sel.split("—")[0].strip().replace("#",""))
-            inc_row  = incidents_gdf.loc[sel_idx]
-            inc_node = inc_row["node_id"]
-            inc_geom = inc_row.geometry
-            inc_type = inc_row["type"]
-            inc_lat, inc_lon = utm_to_ll(inc_geom.x, inc_geom.y)
-            st.caption(f"📍 {inc_lat:.5f}°N, {inc_lon:.5f}°E")
+            if inc_mode == "Preset list":
+                st.session_state["click_mode"] = None
+                inc_labels = [f"#{i} — {r['type']}" for i, r in incidents_gdf.iterrows()]
+                sel = st.selectbox("Select incident:", inc_labels)
+                sel_idx  = int(sel.split("—")[0].strip().replace("#",""))
+                inc_row  = incidents_gdf.loc[sel_idx]
+                inc_node = inc_row["node_id"]
+                inc_geom = inc_row.geometry
+                inc_type = inc_row["type"]
+                inc_lat, inc_lon = utm_to_ll(inc_geom.x, inc_geom.y)
+                st.caption(f"📍 {inc_lat:.5f}°N, {inc_lon:.5f}°E")
 
-        elif inc_mode == "Click on map":
-            st.session_state["click_mode"] = "incident"
-            st.markdown("""
-            <div class="click-info">
-              🖱️ Set 'Map click target' to 'Incident Location' then click the map.
-            </div>""", unsafe_allow_html=True)
-            if st.session_state.get("clicked_inc_lat"):
-                inc_lat = st.session_state["clicked_inc_lat"]
-                inc_lon = st.session_state["clicked_inc_lon"]
+            elif inc_mode == "Click on map":
+                st.session_state["click_mode"] = "incident"
+                st.markdown("""
+                <div class="click-info">
+                  🖱️ Set target to 'Incident Location' then click the map.
+                </div>""", unsafe_allow_html=True)
+                if st.session_state.get("clicked_inc_lat"):
+                    inc_lat = st.session_state["clicked_inc_lat"]
+                    inc_lon = st.session_state["clicked_inc_lon"]
+                    cx, cy  = ll_to_utm(inc_lat, inc_lon)
+                    inc_geom = Point(cx, cy)
+                    inc_node, snap_d = snap_point_to_node(nodes_gdf, inc_geom)
+                    st.success(f"📍 {inc_lat:.5f}°N, {inc_lon:.5f}°E (snapped {snap_d:.0f}m)")
+                    if snap_d > 600:
+                        st.warning("Far from road network — outside study area?")
+                else:
+                    st.info("No map click yet — click on the map first.")
+
+            else:  # Enter coordinates
+                st.session_state["click_mode"] = None
+                c1, c2 = st.columns(2)
+                with c1:
+                    default_lat = st.session_state.get("clicked_inc_lat") or 6.565
+                    inc_lat = st.number_input("Lat (°N)", value=float(default_lat),
+                                              format="%.5f", step=0.001, key="inc_lat_in")
+                with c2:
+                    default_lon = st.session_state.get("clicked_inc_lon") or 3.375
+                    inc_lon = st.number_input("Lon (°E)", value=float(default_lon),
+                                              format="%.5f", step=0.001, key="inc_lon_in")
                 cx, cy  = ll_to_utm(inc_lat, inc_lon)
                 inc_geom = Point(cx, cy)
                 inc_node, snap_d = snap_point_to_node(nodes_gdf, inc_geom)
-                st.success(f"📍 {inc_lat:.5f}°N, {inc_lon:.5f}°E (snapped {snap_d:.0f}m)")
                 if snap_d > 600:
-                    st.warning("Far from road network — outside study area?")
-            else:
-                st.info("No map click yet — click on the map first.")
+                    st.warning(f"Nearest road: {snap_d:.0f}m away")
 
-        else:  # Enter coordinates
-            st.session_state["click_mode"] = None
-            c1, c2 = st.columns(2)
-            with c1:
-                default_lat = st.session_state.get("clicked_inc_lat") or 6.565
-                inc_lat = st.number_input("Lat (°N)", value=float(default_lat),
-                                          format="%.5f", step=0.001, key="inc_lat_in")
-            with c2:
-                default_lon = st.session_state.get("clicked_inc_lon") or 3.375
-                inc_lon = st.number_input("Lon (°E)", value=float(default_lon),
-                                          format="%.5f", step=0.001, key="inc_lon_in")
-            cx, cy  = ll_to_utm(inc_lat, inc_lon)
-            inc_geom = Point(cx, cy)
-            inc_node, snap_d = snap_point_to_node(nodes_gdf, inc_geom)
-            if snap_d > 600:
-                st.warning(f"Nearest road: {snap_d:.0f}m away")
+            type_opts = ["Medical", "RTA", "Fire"]
+            inc_type = st.selectbox(
+                "Incident type:", type_opts,
+                index=type_opts.index(inc_type) if inc_type in type_opts else 0,
+            )
 
-        type_opts = ["Medical", "RTA", "Fire"]
-        inc_type = st.selectbox(
-            "Incident type:", type_opts,
-            index=type_opts.index(inc_type) if inc_type in type_opts else 0,
-        )
+        with col2:
+            st.markdown("#### 🚑 Vehicle Position")
+            veh_mode = st.radio(
+                "Vehicle location:",
+                ["At dispatch station", "📍 Use my location",
+                 "Click on map", "Enter coordinates"],
+                key="veh_mode_sel"
+            )
+            veh_node = None
+            veh_origin_ll = None
 
-        # ── Vehicle position ───────────────────────────────────────────────────
-        st.markdown("---")
-        st.markdown("### Vehicle Start Position")
-        veh_mode = st.radio(
-            "Vehicle location:",
-            ["At dispatch station", "📍 Use my current location",
-             "Click on map", "Enter coordinates"],
-            key="veh_mode_sel"
-        )
-        veh_node = None
-        veh_origin_ll = None
-
-        if veh_mode == "📍 Use my current location":
-            if "geo_consented" not in st.session_state:
-                st.session_state["geo_consented"] = False
-                
-            if not st.session_state["geo_consented"]:
-                st.info("ℹ️ **Privacy Notice:** Your live location is only used to compute the fastest route during this active session. It is not persistently stored, logged, or shared with any external third parties beyond the routing computation itself. You may decline and use manual entry instead.")
-                if st.button("Grant Location Access"):
-                    st.session_state["geo_consented"] = True
-                    st.rerun()
-            else:
-                try:
-                    from streamlit_geolocation import streamlit_geolocation
-                    gps_data = streamlit_geolocation()
-                except ImportError:
-                    st.error("Missing dependency: pip install streamlit-geolocation")
-                    gps_data = None
-    
-                if gps_data and gps_data.get("latitude") and gps_data.get("longitude"):
-                    st.session_state["geo_lat"] = gps_data["latitude"]
-                    st.session_state["geo_lon"] = gps_data["longitude"]
-                    st.session_state["geo_granted"] = True
+            if veh_mode == "📍 Use my location":
+                if "geo_consented" not in st.session_state:
+                    st.session_state["geo_consented"] = False
+                    
+                if not st.session_state["geo_consented"]:
+                    st.info("ℹ️ Your live location is only used to compute the fastest route during this session.")
+                    if st.button("Grant Location Access"):
+                        st.session_state["geo_consented"] = True
+                        st.rerun()
                 else:
-                    st.session_state["geo_granted"] = False
-    
-                if st.session_state.get("geo_granted") and st.session_state.get("geo_lat"):
-                    glat = st.session_state["geo_lat"]
-                    glon = st.session_state["geo_lon"]
-                    st.success(f"📍 Location active: {glat:.5f}°N, {glon:.5f}°E")
-                    vx, vy = ll_to_utm(glat, glon)
+                    try:
+                        from streamlit_geolocation import streamlit_geolocation
+                        gps_data = streamlit_geolocation()
+                    except ImportError:
+                        st.error("Missing dependency: pip install streamlit-geolocation")
+                        gps_data = None
+        
+                    if gps_data and gps_data.get("latitude") and gps_data.get("longitude"):
+                        st.session_state["geo_lat"] = gps_data["latitude"]
+                        st.session_state["geo_lon"] = gps_data["longitude"]
+                        st.session_state["geo_granted"] = True
+                    else:
+                        st.session_state["geo_granted"] = False
+        
+                    if st.session_state.get("geo_granted") and st.session_state.get("geo_lat"):
+                        glat = st.session_state["geo_lat"]
+                        glon = st.session_state["geo_lon"]
+                        st.success(f"📍 Location active: {glat:.5f}°N, {glon:.5f}°E")
+                        vx, vy = ll_to_utm(glat, glon)
+                        veh_node, vd = snap_point_to_node(nodes_gdf, Point(vx, vy))
+                        veh_origin_ll = (glat, glon)
+                        if vd > 600:
+                            st.warning(f"Vehicle snapped {vd:.0f}m to nearest road")
+                        else:
+                            st.caption(f"✅ On road (±{vd:.0f}m)")
+                    else:
+                        err_msg = gps_data.get("error") if gps_data else None
+                        if err_msg:
+                            st.error(f"❌ GPS Error: {err_msg}")
+                        else:
+                            st.info("⏳ Waiting for device GPS authorization...")
+
+            elif veh_mode == "Click on map":
+                st.session_state["click_mode"] = "vehicle"
+                st.markdown("""
+                <div class="click-info">
+                  🖱️ Set target to 'Vehicle Start Position', then click the map.
+                </div>""", unsafe_allow_html=True)
+                if st.session_state.get("clicked_veh_lat"):
+                    vlat = st.session_state["clicked_veh_lat"]
+                    vlon = st.session_state["clicked_veh_lon"]
+                    vx, vy = ll_to_utm(vlat, vlon)
                     veh_node, vd = snap_point_to_node(nodes_gdf, Point(vx, vy))
-                    veh_origin_ll = (glat, glon)
-                    if vd > 600:
-                        st.warning(f"Vehicle snapped {vd:.0f}m to nearest road")
-                    else:
-                        st.caption(f"✅ On road (±{vd:.0f}m)")
+                    veh_origin_ll = (vlat, vlon)
+                    st.success(f"🚑 {vlat:.5f}°N, {vlon:.5f}°E (snapped {vd:.0f}m)")
                 else:
-                    err_msg = gps_data.get("error") if gps_data else None
-                    if err_msg:
-                        st.error(f"❌ GPS Error: {err_msg}")
-                    else:
-                        st.info("⏳ Waiting for device GPS authorization...")
+                    st.info("Click the map to place the vehicle.")
 
-        elif veh_mode == "Click on map":
-            st.session_state["click_mode"] = "vehicle"
-            st.markdown("""
-            <div class="click-info">
-              🖱️ Set 'Map click target' to 'Vehicle Start Position', then click the map.
-            </div>""", unsafe_allow_html=True)
-            if st.session_state.get("clicked_veh_lat"):
-                vlat = st.session_state["clicked_veh_lat"]
-                vlon = st.session_state["clicked_veh_lon"]
+            elif veh_mode == "Enter coordinates":
+                if st.session_state.get("click_mode") == "vehicle":
+                    st.session_state["click_mode"] = None
+                vc1, vc2 = st.columns(2)
+                with vc1:
+                    default_vlat = st.session_state.get("clicked_veh_lat") or 6.565
+                    vlat = st.number_input("Vehicle Lat", value=float(default_vlat),
+                                           format="%.5f", step=0.001, key="veh_lat_in")
+                with vc2:
+                    default_vlon = st.session_state.get("clicked_veh_lon") or 3.370
+                    vlon = st.number_input("Vehicle Lon", value=float(default_vlon),
+                                           format="%.5f", step=0.001, key="veh_lon_in")
                 vx, vy = ll_to_utm(vlat, vlon)
                 veh_node, vd = snap_point_to_node(nodes_gdf, Point(vx, vy))
                 veh_origin_ll = (vlat, vlon)
-                st.success(f"🚑 {vlat:.5f}°N, {vlon:.5f}°E (snapped {vd:.0f}m)")
-            else:
-                st.info("Click the map to place the vehicle.")
+                if vd > 600:
+                    st.warning(f"Vehicle snapped {vd:.0f}m to nearest road")
+                else:
+                    st.success(f"Vehicle on road (±{vd:.0f}m)")
 
-        elif veh_mode == "Enter coordinates":
-            if st.session_state.get("click_mode") == "vehicle":
-                st.session_state["click_mode"] = None
-            vc1, vc2 = st.columns(2)
-            with vc1:
-                default_vlat = st.session_state.get("clicked_veh_lat") or 6.565
-                vlat = st.number_input("Vehicle Lat", value=float(default_vlat),
-                                       format="%.5f", step=0.001, key="veh_lat_in")
-            with vc2:
-                default_vlon = st.session_state.get("clicked_veh_lon") or 3.370
-                vlon = st.number_input("Vehicle Lon", value=float(default_vlon),
-                                       format="%.5f", step=0.001, key="veh_lon_in")
-            vx, vy = ll_to_utm(vlat, vlon)
-            veh_node, vd = snap_point_to_node(nodes_gdf, Point(vx, vy))
-            veh_origin_ll = (vlat, vlon)
-            if vd > 600:
-                st.warning(f"Vehicle snapped {vd:.0f}m to nearest road")
-            else:
-                st.success(f"Vehicle on road (±{vd:.0f}m)")
-
-        st.markdown("---")
-        st.markdown("### Advanced Routing")
-        
-        siren_mode = st.toggle("🚨 Siren Mode (Right-of-way)", value=False, help="Allows emergency vehicles to cautiously travel against one-way restrictions.")
-        
-        time_of_day = st.selectbox(
-            "🕐 Time of day (Static Model - Live API Inactive):",
-            ["Off-peak", "Peak morning", "Peak evening"],
-            index=0,
-            help="Applies realistic time-of-day traffic congestion multipliers to the network. Live TomTom traffic API integration is not active in this deployed demo."
-        )
-        
-        all_facilities = stations_gdf["name"].tolist()
-        unavailable_facilities = st.multiselect(
-            "Mark facilities as unavailable:",
-            all_facilities,
-            default=st.session_state.get("unavailable_facilities", []),
-            help="These facilities will be temporarily excluded from dispatch."
-        )
-        st.session_state["unavailable_facilities"] = unavailable_facilities
+        with col3:
+            st.markdown("#### ⚙️ Advanced Routing")
+            siren_mode = st.toggle("🚨 Siren Mode (Right-of-way)", value=False, help="Allows emergency vehicles to cautiously travel against one-way restrictions.")
+            
+            time_of_day = st.selectbox(
+                "🕐 Time of day (Static Model):",
+                ["Off-peak", "Peak morning", "Peak evening"],
+                index=0,
+                help="Applies time-of-day traffic congestion multipliers to the network."
+            )
+            
+            all_facilities = stations_gdf["name"].tolist()
+            unavailable_facilities = st.multiselect(
+                "Mark facilities as unavailable:",
+                all_facilities,
+                default=st.session_state.get("unavailable_facilities", []),
+                help="These facilities will be temporarily excluded from dispatch."
+            )
+            st.session_state["unavailable_facilities"] = unavailable_facilities
 
         st.markdown("---")
         go = st.button("🚀  Dispatch — Find Optimal Route",
@@ -1822,6 +1793,7 @@ def main():
                 else:
                     st.session_state["leg2_ll"] = []
 
+    with st.sidebar:
         st.markdown("---")
         st.markdown("### Network Stats")
         st.markdown(f"""
@@ -2227,14 +2199,7 @@ def main():
 
         st.markdown("<hr style='border-color:rgba(255,255,255,0.07);margin:.7rem 0'>",
                     unsafe_allow_html=True)
-        if os.path.exists("outputs/results.csv"):
-            df = pd.read_csv("outputs/results.csv")
-            cols_show = [c for c in ["incident_id","incident_type","nearest_station",
-                                     "network_time_min","straight_line_time_min"] if c in df.columns]
-            st.dataframe(df[cols_show].round(2), use_container_width=True, height=170, hide_index=True)
-            st.download_button("⬇️ Download CSV", data=df.to_csv(index=False),
-                               file_name="ambulance_routing_results.csv",
-                               mime="text/csv", use_container_width=True)
+
 
     # ── MAP DISPLAY ───────────────────────────────────────────────────────────
     with map_col:
@@ -2403,6 +2368,14 @@ def main():
                         header[data-testid="stHeader"] { display: none !important; }
                         </style>
                         """, unsafe_allow_html=True)
+                    
+                    sim_speed = st.selectbox(
+                        "⚡ Speed",
+                        options=[1, 2, 5, 10, 20, 30],
+                        index=2, # Default is 5x
+                        format_func=lambda x: f"{x}x",
+                        key="sim_speed_sel"
+                    )
 
                 if is_trk:
                     st.markdown("---")
