@@ -123,7 +123,7 @@ def run_analysis(output_dir: str = "outputs"):
         print(f"  {inc_type}: n={len(grp)}, mean_net={grp['network_time_min'].mean():.2f} min, "
               f"mean_sl={grp['straight_line_time_min'].mean():.2f} min")
 
-    # ── Chart 1: Comparison bar chart ────────────────────────────────────────
+    # --- Chart 1: Comparison bar chart ---
     fig, ax = plt.subplots(figsize=(16, 7))
     
     valid_sorted = valid.sort_values("incident_id")
@@ -177,7 +177,7 @@ def run_analysis(output_dir: str = "outputs"):
     plt.close()
     print(f"Saved: {chart_path}")
     
-    # ── Chart 2: Histogram of network response times ──────────────────────────
+    # --- Chart 2: Histogram of network response times ---
     fig, ax = plt.subplots(figsize=(10, 6))
     
     bins = np.arange(0, valid["network_time_min"].max() + 2, 1.5)

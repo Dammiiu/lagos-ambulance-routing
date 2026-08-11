@@ -7,6 +7,45 @@ __pycache__/
 .vscode/
 .streamlit/
 ~$*
+
+# Data caches
 *.qgz
 data/road_network_cache.pkl
+cache/
+
+# Output files
+outputs/
 outputs.zip
+images/
+
+# Personal documents
+*.pdf
+*.docx
+*.pptx
+pdf_content.txt
+
+# One-off scripts
+fix_stations.py
+run_all.py
+read_pdf.py
+step_*.py
+test_tomtom.py
+st_folium_help.txt
+validate_backend.py
+
+# Unused shapefile fragments
+base.cpg
+base.dbf
+base.prj
+base.shp
+base.shx
+Lagos_ERouting.dbf
+
+# Old source files
+src/app_refactored_2.py
+
+# Tests (local only)
+tests/
+
+# Misc
+.pytest_cache/

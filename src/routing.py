@@ -31,7 +31,7 @@ import networkx as nx
 import geopandas as gpd
 from shapely.geometry import Point
 
-# ─── Incident type → required facility_type mapping ───────────────────────────
+# --- Incident type to facility type mapping ---
 INCIDENT_TO_FACILITY = {
     "Medical": "medical",
     "medical": "medical",
@@ -42,9 +42,7 @@ INCIDENT_TO_FACILITY = {
 }
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# MODEL 1 — Route Optimization (Dijkstra Shortest Path)
-# ══════════════════════════════════════════════════════════════════════════════
+# --- Model 1: Route Optimization (Dijkstra Shortest Path) ---
 
 def shortest_path(G: nx.DiGraph, origin_node, dest_node, blocked_edges=None):
     """
@@ -94,9 +92,7 @@ def dijkstra_distance(G: nx.DiGraph, origin_node, dest_node, blocked_edges=None)
             G[u][v][0]["time_min"] = w
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# MODEL 2 — Closest Facility Analysis (Type-Aware, Section 3.6)
-# ══════════════════════════════════════════════════════════════════════════════
+# --- Model 2: Closest Facility Analysis (Type-Aware, Section 3.6) ---
 
 def find_closest_station(
     G: nx.DiGraph,
@@ -165,9 +161,7 @@ def find_closest_station(
     }
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# MODEL 4 — Two-Leg Full Response Chain (Practical Extension)
-# ══════════════════════════════════════════════════════════════════════════════
+# --- Model 4: Two-Leg Full Response Chain ---
 
 def two_leg_route(
     G: nx.DiGraph,
@@ -181,8 +175,7 @@ def two_leg_route(
     """
     Two-Leg Full Emergency Response Chain.
 
-    This is a practical real-world extension of the closest facility model,
-    modelling the complete emergency response cycle:
+    Models the complete emergency response cycle:
 
       LEG 1: Dispatch → Incident scene
           The nearest appropriate dispatch station responds to the incident.
@@ -208,7 +201,7 @@ def two_leg_route(
         has_leg2 (bool)
     None if Leg 1 not reachable.
     """
-    # ── Leg 1: dispatch station → incident ───────────────────────────────────
+    # --- Leg 1: dispatch station to incident ---
     leg1 = find_closest_station(G, nodes_gdf, incident_node, incident_type, stations_gdf, blocked_edges=blocked_edges)
     if leg1 is None:
         return None
@@ -229,7 +222,7 @@ def two_leg_route(
         "total_time_min":     leg1["network_time_min"],
     }
 
-    # ── Leg 2: incident scene → nearest medical facility (Medical/RTA only) ──
+    # --- Leg 2: incident scene to nearest medical facility (Medical/RTA only) ---
     if incident_type in ("Medical", "RTA", "medical", "rta"):
         if custom_hospital_node is not None and custom_hospital_node in G.nodes:
             # Find in stations_gdf
@@ -288,9 +281,7 @@ def two_leg_route(
     return result
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# MODEL 5 — Straight-Line Baseline
-# ══════════════════════════════════════════════════════════════════════════════
+# --- Model 5: Straight-Line Baseline ---
 
 def straight_line_time(pt1, pt2, speed_kmh: float = 50.0) -> float:
     """
@@ -308,9 +299,7 @@ def straight_line_time(pt1, pt2, speed_kmh: float = 50.0) -> float:
     return (dist_m / speed_mps) / 60.0
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Utility: snap all stations/incidents to nearest graph nodes
-# ══════════════════════════════════════════════════════════════════════════════
+# --- Utility: snap all stations/incidents to nearest graph nodes ---
 
 def snap_stations_to_graph(
     stations_gdf: gpd.GeoDataFrame, nodes_gdf: gpd.GeoDataFrame
@@ -344,9 +333,7 @@ def snap_incidents_to_graph(
     return incidents
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Self-test
-# ══════════════════════════════════════════════════════════════════════════════
+# --- Self-test ---
 
 def _run_synthetic_test():
     """Verify all routing models on a small synthetic graph."""

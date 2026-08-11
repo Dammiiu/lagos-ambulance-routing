@@ -49,7 +49,7 @@ def build_graph(edges_path: str = EDGES_PATH, nodes_path: str = NODES_PATH, cach
     G          : nx.DiGraph
     nodes_gdf  : GeoDataFrame  (index = osmid)
     """
-    # ── Check Pickle Cache ────────────────────────────────────────────────────
+    # --- Check Pickle Cache ---
     if os.path.exists(cache_path):
         try:
             print(f"[network_builder] Loading cached graph from: {cache_path}")
@@ -60,7 +60,7 @@ def build_graph(edges_path: str = EDGES_PATH, nodes_path: str = NODES_PATH, cach
         except Exception as e:
             print(f"[network_builder] Error loading cache: {e}. Rebuilding graph...")
 
-    # ── Rebuild Graph ─────────────────────────────────────────────────────────
+    # --- Rebuild Graph ---
     print("[network_builder] Loading edges from:", edges_path)
     edges_gdf = gpd.read_file(edges_path)
     print(f"[network_builder] Loaded {len(edges_gdf)} edges.")

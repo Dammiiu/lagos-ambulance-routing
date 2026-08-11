@@ -28,7 +28,7 @@ from shapely.geometry import Point, MultiPoint
 from shapely.ops import unary_union
 
 
-# ── Core model ─────────────────────────────────────────────────────────────────
+# --- Core model ---
 
 def compute_service_area(G: nx.DiGraph, nodes_gdf: gpd.GeoDataFrame, 
                           station_node, t_minutes: float) -> set:
@@ -111,7 +111,7 @@ def nodes_to_polygon(nodes_gdf: gpd.GeoDataFrame, node_set: set, buffer_m: float
     return polygon
 
 
-# ── Visualization ─────────────────────────────────────────────────────────────
+# --- Visualization ---
 
 def plot_service_area_map(G, nodes_gdf, edges_gdf, stations_gdf, incidents_gdf,
                            t_minutes_list=None, output_path="outputs/service_area_map.png"):
@@ -221,7 +221,7 @@ def plot_service_area_map(G, nodes_gdf, edges_gdf, stations_gdf, incidents_gdf,
     return sa_results
 
 
-# ── Main ───────────────────────────────────────────────────────────────────────
+# --- Main ---
 
 if __name__ == "__main__":
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

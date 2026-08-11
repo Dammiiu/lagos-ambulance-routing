@@ -20,9 +20,7 @@ from pyproj import Transformer
 _to_wgs84 = Transformer.from_crs("EPSG:32631", "EPSG:4326", always_xy=True)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# BEARING & TURN COMPUTATION
-# ══════════════════════════════════════════════════════════════════════════════
+# --- Bearing & Turn Computation ---
 
 def bearing_deg(x1, y1, x2, y2) -> float:
     """
@@ -65,9 +63,7 @@ def cardinal_direction(bear: float) -> str:
     return dirs[ix]
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# TURN-BY-TURN DIRECTION GENERATION
-# ══════════════════════════════════════════════════════════════════════════════
+# --- Turn-by-Turn Direction Generation ---
 
 def generate_directions(G, path: list) -> list:
     """
@@ -270,9 +266,7 @@ def format_directions_html(directions: list, leg_label: str = "Route") -> str:
     return "".join(html_parts)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# ROUTE COORDINATE INTERPOLATION (for smooth animation)
-# ══════════════════════════════════════════════════════════════════════════════
+# --- Route Coordinate Interpolation (for smooth animation) ---
 
 def interpolate_route(utm_coords: list, step_m: float = 20.0) -> list:
     """
